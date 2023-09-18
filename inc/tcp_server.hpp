@@ -1,42 +1,14 @@
 #ifndef TCP_SERVER_HPP
 #define TCP_SERVER_HPP
 
-#include <stdio.h>
-#include <netinet/in.h>
-#include <unistd.h>
-#include <sys/select.h>
-#include <string.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <string>
-#include <list>
-#include <vector>
-#include <map>
-#include <netinet/tcp.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <iostream>
-#include "client.hpp"
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include "server_status.hpp"
+#include "headers_included.hpp"
 
 typedef struct sockaddr_in SocketData;
 
 template <typename Context>
-class ServerTCP
-{
-
-using GotMessage = void (*)(Client &a_client, int _id, char *_msg, int _length, Context &_context);
-using CloseClient = void (*)(int _id, Context &_context);
-using NewClient = int (*)(int _id, Context &_context);
-using OnFail = void (*)(int _id, std::string const &_err, Context &_context);
-
+class ServerTCP {
 public:
-	ServerTCP(int _port, int _backLog, GotMessage _gotMessage, CloseClient _closeClient, NewClient _newClient, OnFail _onFail, Context &_context, size_t a_buffer_size = 1024);
+	ServerTCP(int _port, int _backLog, GotMessage<Context> _gotMessage, CloseClient<Context> _closeClient, NewClient<Context> _newClient, OnFail<Context> _onFail, Context &_context, size_t a_buffer_size = 1024);
 	~ServerTCP();
 	
 	ServerTCP_Status run_server();
@@ -91,10 +63,10 @@ private:
 	char *m_buffer;
 	int m_activity;
 	int m_numberOfClients;
-	GotMessage m_gotMessage;
-	CloseClient m_closeClient;
-	NewClient m_newClient;
-	OnFail m_onFail;
+	GotMessage<Context> m_gotMessage;
+	CloseClient<Context> m_closeClient;
+	NewClient<Context> m_newClient;
+	OnFail<Context> m_onFail;
 	std::mutex m_mutex;
 	std::condition_variable m_cv;
 	std::atomic<u_int8_t> m_threads_count;
@@ -102,7 +74,7 @@ private:
 };
 
 template <typename Context>
-ServerTCP<Context>::ServerTCP(int _port, int _backLog, GotMessage _gotMessage, CloseClient _closeClient, NewClient _newClient, OnFail _onFail, Context &_context, size_t a_buffer_size)
+ServerTCP<Context>::ServerTCP(int _port, int _backLog, GotMessage<Context> _gotMessage, CloseClient<Context> _closeClient, NewClient<Context> _newClient, OnFail<Context> _onFail, Context &_context, size_t a_buffer_size)
 : m_context(_context)
 {
 	if (!_port || !_backLog || !_gotMessage){
