@@ -3,21 +3,21 @@
 #include "topic.hpp"
 
 RemoteAIServer::RemoteAIServer(int a_port)
-: m_server{a_port, 128, read_income, close_client, new_client, on_fail, *this}
+: m_server{a_port, 128, read_income, close_client, new_client, on_fail, *this, 1024*1024}
 , m_objects{}
 , m_subscribers{}
 {
     m_server.run_server();
 }
 
-void RemoteAIServer::read_income(ServerTCP<RemoteAIServer> &_server, Client &a_client, int _id, char *_msg, int _length, RemoteAIServer &a_server)
+void RemoteAIServer::read_income(Client &a_client, int _id, char *_msg, int _length, RemoteAIServer &a_server)
 {
     std::string seq{_msg, size_t(_length)};
     Topic topic_name;
     if(a_server.is_subscribe(seq)){
         Topic new_sub{a_server.get_topic(seq)};
         a_server.m_subscribers[new_sub].emplace_back(_id, a_client.addr());
-        _server.send_message(new_sub.name(), _id);
+        a_server.m_server.send_message(new_sub.name(), _id);
         if(new_sub.name()=="robot_view"){
             a_server.send_immediate_message("@askstream");
         }
@@ -25,23 +25,22 @@ void RemoteAIServer::read_income(ServerTCP<RemoteAIServer> &_server, Client &a_c
     }
     else if(a_server.is_publish(seq)){
         a_server.set_topic_object(seq,topic_name,_length);
-        _server.send_message(a_server.m_ok, _id);
+        a_server.m_server.send_message(a_server.m_ok, _id);
     }
     if(topic_name && a_server.is_topic_listened(topic_name)){
         a_server.notify_all_subscribers(topic_name);
     }
 }
 
-void RemoteAIServer::close_client(ServerTCP<RemoteAIServer> &_server, int _id, RemoteAIServer &_context)
+void RemoteAIServer::close_client(int _id, RemoteAIServer &_context)
 {
-    (void)_server;
     _context.remove_subscriber(_id);
     std::cerr << "Client " <<_id<<" closed"<<std::endl;
 }
 
-int RemoteAIServer::new_client(ServerTCP<RemoteAIServer> &_server, int _id, RemoteAIServer &a_server)
+int RemoteAIServer::new_client(int _id, RemoteAIServer &a_server)
 {
-    _server.send_message(a_server.m_ok, _id);
+    a_server.m_server.send_message(a_server.m_ok, _id);
     return 1;
 }
 

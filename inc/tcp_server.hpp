@@ -22,63 +22,63 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-
-const size_t BUF_SIZE = 1024 * 1024;
+#include "server_status.hpp"
 
 typedef struct sockaddr_in SocketData;
-
-enum ServerTCP_Status
-{
-	SERVER_SUCCESS,
-	SERVER_SELECT_ERROR,
-	SERVER_SOCKET_ERROR,
-	SERVER_UNINITIALIZED,
-	SERVER_SEND_FAIL
-};
 
 template <typename Context>
 class ServerTCP
 {
-	using GotMessage = void (*)(ServerTCP<Context> &_server, Client &a_client, int _id, char *_msg, int _length, Context &_context);
-	using CloseClient = void (*)(ServerTCP<Context> &_server, int _id, Context &_context);
-	using NewClient = int (*)(ServerTCP<Context> &_server, int _id, Context &_context);
-	using OnFail = void (*)(int _id, std::string const &_err, Context &_context);
+
+using GotMessage = void (*)(Client &a_client, int _id, char *_msg, int _length, Context &_context);
+using CloseClient = void (*)(int _id, Context &_context);
+using NewClient = int (*)(int _id, Context &_context);
+using OnFail = void (*)(int _id, std::string const &_err, Context &_context);
 
 public:
-	ServerTCP(int _port, int _backLog, GotMessage _gotMessage, CloseClient _closeClient, NewClient _newClient, OnFail _onFail, Context &_context);
+	ServerTCP(int _port, int _backLog, GotMessage _gotMessage, CloseClient _closeClient, NewClient _newClient, OnFail _onFail, Context &_context, size_t a_buffer_size = 1024);
 	~ServerTCP();
-	void close_all(Client &_client);
-	void socket_set(Client &_client);
-	int read_incomming_data(Client &_client);
-	static void read_incomming_heavy(ServerTCP *a_server, Client *_client);
-	void client_no_recieve(int a_result, Client &a_client);
-	bool thread_safe_client_no_recieve(int a_result, Client *a_client);
-	int read_incomming_data(int const &);
-	void get_clients_map(std::map<int, int> &_clients);
+	
 	ServerTCP_Status run_server();
 	ServerTCP_Status send_message(std::string const &_data, int _sock);
 	ServerTCP_Status send_message_raw(const char *_data, size_t a_len, int _sock);
-	static void thread_server_run(ServerTCP *a_server);
+
 	void close_client(Client &_client);
 	char *get_buffer();
-	void ClearBuffer();
 
 private:
-	void AddClient(struct sockaddr_in _sin, int _sock);
-	void ReadClientsDataIn();
+	void set_no_delay(int a_socket, bool a_no_delay);
+	void set_recieve_timeout(int a_socket, size_t a_seconds, size_t a_microseconds);
+
+private:
+	void add_client(struct sockaddr_in _sin, int _sock);
+	void read_clients_data_income();
 	void remove_client(Client &_client);
 	void remove_client(int const &);
-	int ListenMainSocket();
-	int BindSockect();
-	int OpenIncommingConnectionsSocket();
 	void clean_up();
-	int OpenSocket();
-	Client *get_client_by_id(int const &a_id);
-	bool is_temination(size_t &a_total, int a_pos);
-	bool thread_safe_is_termination(char *a_buffer, size_t &a_total, int a_pos) const;
+	void close_all(Client &_client);
+	void socket_set(Client &_client);
+	void clear_buffer();
+
+private:
+	int read_incomming_data(int const &);
+	int read_incomming_data(Client &_client);
+	int listen_main_socket();
+	int bind_socket();
+	int open_incomming_connections_socket();
+	int open_socket();
 	int decrease_activity();
+	int recieve_from_client(int a_socket, char *a_buffer, size_t a_buffer_size, size_t a_starting_point, Client *a_client, bool a_is_threaded = false);
 	int thread_safe_decrease_activity();
 
+private:
+	bool client_no_recieve(int a_result, Client &a_client);
+	bool thread_safe_client_no_recieve(int a_result, Client *a_client);
+
+private:
+	static void read_incomming_heavy(ServerTCP *a_server, Client *_client);
+	size_t get_total_data_size(char *a_buffer, size_t a_read_already, int a_digit_number);
+	Client *get_client_by_id(int const &a_id);
 
 private:
 	Context &m_context;
@@ -88,7 +88,7 @@ private:
 	int m_port;
 	int m_backLog;
 	fd_set m_fdSet;
-	char m_buffer[BUF_SIZE];
+	char *m_buffer;
 	int m_activity;
 	int m_numberOfClients;
 	GotMessage m_gotMessage;
@@ -98,16 +98,17 @@ private:
 	std::mutex m_mutex;
 	std::condition_variable m_cv;
 	std::atomic<u_int8_t> m_threads_count;
+	size_t m_buffer_size;
 };
 
 template <typename Context>
-ServerTCP<Context>::ServerTCP(int _port, int _backLog, GotMessage _gotMessage, CloseClient _closeClient, NewClient _newClient, OnFail _onFail, Context &_context)
+ServerTCP<Context>::ServerTCP(int _port, int _backLog, GotMessage _gotMessage, CloseClient _closeClient, NewClient _newClient, OnFail _onFail, Context &_context, size_t a_buffer_size)
 : m_context(_context)
 {
 	if (!_port || !_backLog || !_gotMessage){
 		return;
 	}
-	m_listenningSocket = OpenSocket();
+	m_listenningSocket = open_socket();
 	if (m_listenningSocket == -1){
 		return;
 	}
@@ -122,39 +123,34 @@ ServerTCP<Context>::ServerTCP(int _port, int _backLog, GotMessage _gotMessage, C
 	m_sin.sin_port = htons(_port);
 	m_sin.sin_addr.s_addr = INADDR_ANY;
 	m_threads_count = 0;
-	OpenIncommingConnectionsSocket();
-	BindSockect();
-	ListenMainSocket();
+	m_buffer_size = a_buffer_size;
+	m_buffer = new char[m_buffer_size];
+	open_incomming_connections_socket();
+	bind_socket();
+	listen_main_socket();
 	std::list<Client> m_clients = std::list<Client>{};
-	ClearBuffer();
+	clear_buffer();
 }
 
 template <typename Context>
 ServerTCP<Context>::~ServerTCP()
 {
-	for (auto &client : m_clients)
-	{
+	for (auto &client : m_clients){
 		close_all(client);
 	}
 	close(m_listenningSocket);
+	delete [] m_buffer;
 }
 
 template <typename Context>
 ServerTCP_Status ServerTCP<Context>::run_server()
 {
-	int new_sock;
-	int yes = 1;
 	struct sockaddr_in sin;
 	socklen_t addrlen;
 	addrlen = sizeof(struct sockaddr_in);
-	/*
-	struct timeval tv;
-	tv.tv_sec = 0;
-	tv.tv_usec = 100000;
-	*/
 	if (m_listenningSocket == -1) {
 		m_onFail(-1, std::string{strerror(errno)}, m_context);
-		return SERVER_SOCKET_ERROR;
+		return ServerTCP_Status::SERVER_SOCKET_ERROR;
 	}
 
 	for(;;){
@@ -167,19 +163,18 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 		m_activity = select(FD_SETSIZE, &(m_fdSet), NULL, NULL, NULL);
 		if (m_activity >= 0){
 			if (FD_ISSET(this->m_listenningSocket, &(this->m_fdSet))){
-				new_sock = accept(m_listenningSocket, (struct sockaddr *)&sin, &addrlen);
-				setsockopt(new_sock, IPPROTO_TCP, TCP_NODELAY, (char *)&yes, sizeof(int));
-				//setsockopt(new_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+				int new_sock = accept(m_listenningSocket, (struct sockaddr *)&sin, &addrlen);
+				set_no_delay(new_sock, true);
 				if (new_sock >= 0){
 					if (m_numberOfClients >= m_backLog){
 						close(new_sock);
 						m_onFail(new_sock, "Server busy", m_context);
-						m_closeClient(*this, new_sock, m_context);
+						m_closeClient(new_sock, m_context);
 					} else {
-						if (!m_newClient(*this, new_sock, m_context)){
+						if (!m_newClient(new_sock, m_context)){
 							close(new_sock);
 						} else {
-							AddClient(sin, new_sock);
+							add_client(sin, new_sock);
 						}
 					}
 				} else {
@@ -190,16 +185,16 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 					clean_up();
 				}
 			}
-			ReadClientsDataIn();
+			read_clients_data_income();
 		} else {
-			return SERVER_SELECT_ERROR;
+			return ServerTCP_Status::SERVER_SELECT_ERROR;
 		}
 	}
 	for (auto client : m_clients) {
 		close_all(client);
 	}
 	close(m_listenningSocket);
-	return SERVER_SUCCESS;
+	return ServerTCP_Status::SERVER_SUCCESS;
 }
 
 template <typename Context>
@@ -211,10 +206,10 @@ ServerTCP_Status ServerTCP<Context>::send_message(std::string const &_data, int 
 	} catch(...){
 		if (sent_bytes < 0){
 			m_onFail(_sock, std::string{strerror(errno)}, m_context);
-			return SERVER_SEND_FAIL;
+			return ServerTCP_Status::SERVER_SEND_FAIL;
 		}
 	}
-	return SERVER_SUCCESS;
+	return ServerTCP_Status::SERVER_SUCCESS;
 }
 
 template <typename Context>
@@ -226,21 +221,21 @@ ServerTCP_Status ServerTCP<Context>::send_message_raw(const char *_data, size_t 
 	} catch(...) {
 		if (sent_bytes < 0){
 			m_onFail(_sock, std::string{strerror(errno)}, m_context);
-			return SERVER_SEND_FAIL;
+			return ServerTCP_Status::SERVER_SEND_FAIL;
 		}
 	}
-	return SERVER_SUCCESS;
+	return ServerTCP_Status::SERVER_SUCCESS;
 }
 
 template <typename Context>
 void ServerTCP<Context>::close_all(Client &_client)
 {
 	close(_client.socket());
-	m_closeClient(*this, _client.socket(), m_context);
+	m_closeClient(_client.socket(), m_context);
 }
 
 template <typename Context>
-void ServerTCP<Context>::AddClient(struct sockaddr_in _sin, int _sock)
+void ServerTCP<Context>::add_client(struct sockaddr_in _sin, int _sock)
 {
 	Client client{_sock, _sin};
 	m_clients.push_back(client);
@@ -261,7 +256,7 @@ void ServerTCP<Context>::clean_up()
 }
 
 template <typename Context>
-void ServerTCP<Context>::ReadClientsDataIn()
+void ServerTCP<Context>::read_clients_data_income()
 {
 	for (auto &client : m_clients){
 		if (client.is_closed()){
@@ -274,8 +269,7 @@ void ServerTCP<Context>::ReadClientsDataIn()
 				client.set_action();
 				++m_threads_count;
 				std::thread{read_incomming_heavy, this, &client}.detach();
-			}
-			
+			}	
 		} else {
 
 			read_incomming_data(client);
@@ -292,10 +286,8 @@ void ServerTCP<Context>::socket_set(Client &_client)
 template <typename Context>
 void ServerTCP<Context>::remove_client(Client &_client)
 {
-	for (auto it = m_clients.begin(); it != m_clients.end(); ++it)
-	{
-		if (it->socket() == _client.socket())
-		{
+	for (auto it = m_clients.begin(); it != m_clients.end(); ++it) {
+		if (it->socket() == _client.socket()) {
 			m_clients.erase(it);
 			return;
 		}
@@ -305,10 +297,8 @@ void ServerTCP<Context>::remove_client(Client &_client)
 template <typename Context>
 void ServerTCP<Context>::remove_client(int const &a_id)
 {
-	for (auto it = m_clients.begin(); it != m_clients.end(); ++it)
-	{
-		if (it->socket() == a_id)
-		{
+	for (auto it = m_clients.begin(); it != m_clients.end(); ++it) {
+		if (it->socket() == a_id) {
 			m_clients.erase(it);
 			return;
 		}
@@ -318,37 +308,23 @@ void ServerTCP<Context>::remove_client(int const &a_id)
 template <typename Context>
 int ServerTCP<Context>::read_incomming_data(Client &_client)
 {
-	int result = 0;
 	int digit_number = 5;
 	fd_set m_fdSet_copy = this->m_fdSet;
 	if (FD_ISSET(_client.socket(), &(m_fdSet_copy))){
-		result = recv(_client.socket(), m_buffer, BUF_SIZE, 0);
-		if(result <= 0){
-			client_no_recieve(result, _client);
-			return decrease_activity();
-		}
-		std::string data{m_buffer, size_t(result)};
-		size_t read_remain = 0;
-		if(data.size() > 0){
-			data = data.substr(data.find(">>")+2, digit_number);
-		}
 		try{
-			read_remain = std::stol(data);
-		} catch(...){};
-		size_t read_already = result;
-		while(read_already < read_remain){
-			result = recv(_client.socket(), m_buffer+read_already, BUF_SIZE, 0);
-			if(result <= 0)break;
-			read_already += result;
-		}
-		if(read_already > 1000){
-			_client.heavy() = true;
-		}
-		m_buffer[read_already]='\0';
-		if (read_already > 0 && result > 0){
-			m_gotMessage(*this, _client, _client.socket(), &m_buffer[4+digit_number], read_already-4-digit_number, m_context);
-		} else {
-			client_no_recieve(result, _client);
+			size_t read_already = recieve_from_client(_client.socket(), m_buffer, m_buffer_size, 0, &_client);
+			size_t read_remain = get_total_data_size(m_buffer, read_already, digit_number);
+			while(read_already < read_remain){
+				read_already += recieve_from_client(_client.socket(), m_buffer, m_buffer_size, read_already, &_client);
+			}
+			if(read_already > 1000){
+				_client.heavy() = true;
+			}
+			m_buffer[read_already]='\0';
+			if (read_already > 0){
+				m_gotMessage(_client, _client.socket(), &m_buffer[4+digit_number], read_already-4-digit_number, m_context);
+			}
+		} catch(...) {
 			return decrease_activity();
 		}
 	}
@@ -356,51 +332,65 @@ int ServerTCP<Context>::read_incomming_data(Client &_client)
 }
 
 template <typename Context>
-void ServerTCP<Context>::read_incomming_heavy(ServerTCP *a_server, Client *_client)
+int ServerTCP<Context>::recieve_from_client(int a_socket, char *a_buffer, size_t a_buffer_size, size_t a_starting_point, Client *a_client, bool a_is_threaded)
 {
-	char local_buff[BUF_SIZE] = {0};
-	int digit_number = 5;
-	for(;;){
-		int result = recv(_client->socket(), local_buff, BUF_SIZE, 0);
-		if(a_server->thread_safe_client_no_recieve(result, _client)){
-			return;
+	int result = recv(a_socket, a_buffer, a_buffer_size, a_starting_point);
+	if (a_is_threaded){
+		if(thread_safe_client_no_recieve(result, a_client)){
+			delete [] a_buffer;
+			throw "error recieving";
 		}
-		std::string data{local_buff, size_t(result)};
-		size_t read_remain = 0;
-		if(data.size() > 0){
-			data = data.substr(data.find(">>")+2, digit_number);
-		}
-		try{
-			read_remain = std::stol(data);
-		} catch(...){};
-		size_t read_already = result;
-		while(read_already < read_remain){
-			result = recv(_client->socket(), local_buff+read_already, BUF_SIZE, 0);
-			if(a_server->thread_safe_client_no_recieve(result, _client)){
-				return;
-			}
-			read_already += result;
-		}
-		local_buff[read_already]='\0';
-		if (read_already > 0 && result > 0){
-			a_server->m_gotMessage(*a_server, *_client, _client->socket(), &local_buff[4+digit_number], read_already-4-digit_number, a_server->m_context);
-		}
+	} else if(client_no_recieve(result, *a_client)){
+		throw "error recieving";
 	}
+	return result;
 }
 
 template <typename Context>
-inline void ServerTCP<Context>::client_no_recieve(int a_result, Client &a_client)
+size_t ServerTCP<Context>::get_total_data_size(char *a_buffer, size_t a_read_already, int a_digit_number)
 {
-	if(a_result == 0){
+	std::string data{a_buffer, a_read_already};
+	if(data.size() > 0){
+		data = data.substr(data.find(">>")+2, a_digit_number);
+	}
+	return std::stol(data);
+}
+
+template <typename Context>
+void ServerTCP<Context>::read_incomming_heavy(ServerTCP *a_server, Client *_client)
+{
+	char *local_buff = new char[a_server->m_buffer_size];
+	int digit_number = 5;
+	for(;;){
+		try{
+			size_t read_already = a_server->recieve_from_client(_client->socket(), local_buff, a_server->m_buffer_size, 0, _client, true);
+			std::string data{local_buff, read_already};
+			size_t read_remain = a_server->get_total_data_size(local_buff, read_already, digit_number);
+			while(read_already < read_remain){
+				read_already += a_server->recieve_from_client(_client->socket(), local_buff, a_server->m_buffer_size, read_already, _client, true);
+			}
+			local_buff[read_already]='\0';
+			if (read_already > 0){
+				a_server->m_gotMessage(*_client, _client->socket(), &local_buff[4+digit_number], read_already-4-digit_number, a_server->m_context);
+			}
+		} catch(...) {
+			return;
+		}
+	}
+	
+}
+
+template <typename Context>
+inline bool ServerTCP<Context>::client_no_recieve(int a_result, Client &a_client)
+{
+	if(a_result <= 0){
 		m_onFail(a_client.socket(), strerror(errno), m_context);
-		m_closeClient(*this, a_client.socket(), m_context);
+		m_closeClient(a_client.socket(), m_context);
 		FD_CLR(a_client.socket(), &(this->m_fdSet));
 		a_client.close();
+		return true;
 	}
-	else if(a_result < 0){
-		m_onFail(a_client.socket(), std::string{strerror(errno)}, m_context);
-		a_client.close();
-	}
+	return false;
 }
 
 template <typename Context>
@@ -409,7 +399,7 @@ bool ServerTCP<Context>::thread_safe_client_no_recieve(int a_result, Client *a_c
 	std::lock_guard<std::mutex> lock(m_mutex);
 	if(a_result <= 0){
 		m_onFail(a_client->socket(), strerror(errno), m_context);
-		m_closeClient(*this, a_client->socket(), m_context);
+		m_closeClient(a_client->socket(), m_context);
 		a_client->close();
 		--m_threads_count;
 		return true;
@@ -420,44 +410,12 @@ bool ServerTCP<Context>::thread_safe_client_no_recieve(int a_result, Client *a_c
 template <typename Context>
 Client *ServerTCP<Context>::get_client_by_id(int const &a_id)
 {
-	for (auto it = m_clients.begin(); it != m_clients.end(); ++it)
-	{
-		if (it->socket() == a_id)
-		{
+	for (auto it = m_clients.begin(); it != m_clients.end(); ++it) {
+		if (it->socket() == a_id) {
 			return &*it;
 		}
 	}
 	return nullptr;
-}
-
-template <typename Context>
-inline bool ServerTCP<Context>::is_temination(size_t &a_total, int a_pos)
-{
-	if(a_pos>3){
-		/*
-		std::cout<<"\n";
-		for(int i=1;i<5;++i){
-			std::cout<<i<<":"<<m_buffer[a_total-i]<<",";
-		}
-		*/
-		if(!m_buffer[a_total-1]&&!m_buffer[a_total-2]&&!m_buffer[a_total-3]&&!m_buffer[a_total-4]){
-			a_total-=4;
-			return true;
-		}
-	}
-	return false;
-}
-
-template <typename Context>
-inline bool ServerTCP<Context>::thread_safe_is_termination(char *a_buffer, size_t &a_total, int a_pos) const
-{
-	if(a_pos>3){
-		if(!a_buffer[a_total-1]&&!a_buffer[a_total-2]&&!a_buffer[a_total-3]&&!a_buffer[a_total-4]){
-			a_total-=4;
-			return true;
-		}
-	}
-	return false;
 }
 
 template <typename Context>
@@ -486,40 +444,21 @@ int ServerTCP<Context>::read_incomming_data(int const &a_id)
 {
 	return read_incomming_data(*get_client_by_id(a_id));
 }
-
 template <typename Context>
-void ServerTCP<Context>::get_clients_map(std::map<int, int> &a_clients_map)
-{
-	a_clients_map.clear();
-	for (auto it = m_clients.begin(); it != m_clients.end(); ++it)
-	{
-		a_clients_map[it->socket()] = it->socket();
-	}
-}
-
-template <typename Context>
-int ServerTCP<Context>::OpenIncommingConnectionsSocket()
+int ServerTCP<Context>::open_incomming_connections_socket()
 {
 	int optval = 1;
-	if (setsockopt(m_listenningSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0)
-	{
+	if (setsockopt(m_listenningSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
 		perror("reuse failed");
 		return 0;
 	}
-
-	setsockopt(m_listenningSocket, /* socket affected */
-			   IPPROTO_TCP,		   /* set option at TCP level */
-			   TCP_NODELAY,		   /* name of option */
-			   (char *)&optval,	   /* the cast is historical cruft */
-			   sizeof(int));
 	return 1;
 }
 
 template <typename Context>
-int ServerTCP<Context>::BindSockect()
+int ServerTCP<Context>::bind_socket()
 {
-	if ((bind(m_listenningSocket, (struct sockaddr *)&(m_sin), sizeof(struct sockaddr_in))) != 0)
-	{
+	if ((bind(m_listenningSocket, (struct sockaddr *)&(m_sin), sizeof(struct sockaddr_in))) != 0) {
 		perror("bind failed");
 		close(m_listenningSocket);
 		return 0;
@@ -528,10 +467,9 @@ int ServerTCP<Context>::BindSockect()
 }
 
 template <typename Context>
-int ServerTCP<Context>::ListenMainSocket()
+int ServerTCP<Context>::listen_main_socket()
 {
-	if ((listen(m_listenningSocket, m_backLog)) < 0)
-	{
+	if ((listen(m_listenningSocket, m_backLog)) < 0) {
 		perror("listen failed");
 		close(m_listenningSocket);
 		return 0;
@@ -540,12 +478,11 @@ int ServerTCP<Context>::ListenMainSocket()
 }
 
 template <typename Context>
-int ServerTCP<Context>::OpenSocket()
+int ServerTCP<Context>::open_socket()
 {
 	int sock;
 	sock = socket(AF_INET, SOCK_STREAM, 0);
-	if (sock == -1)
-	{
+	if (sock == -1) {
 		perror("failed:");
 		return -1;
 	}
@@ -553,48 +490,41 @@ int ServerTCP<Context>::OpenSocket()
 }
 
 template <typename Context>
-void ServerTCP<Context>::thread_server_run(ServerTCP *a_server)
-{
-	try
-	{
-		a_server->run_server();
-	}
-	catch (...)
-	{
-		thread_server_run(a_server);
-	}
-}
-
-template <typename Context>
 void ServerTCP<Context>::close_client(Client &_client)
 {
 	close(_client.socket());
-	--(m_numberOfClients);
-	if (m_onFail)
-	{
-		m_onFail(_client.socket(), strerror(errno), m_context);
-	}
-	if (m_closeClient)
-	{
-		m_closeClient(*this, _client.socket(), m_context);
-	}
+	--m_numberOfClients;
+	m_onFail(_client.socket(), strerror(errno), m_context);
+	m_closeClient(_client.socket(), m_context);
 	remove_client(_client);
 }
 
 template <typename Context>
-void ServerTCP<Context>::ClearBuffer()
+void ServerTCP<Context>::clear_buffer()
 {
-	for (auto &c : m_buffer)
-	{
-		if (c == '\0')
-		{
+	for (size_t i = 0; i < m_buffer_size; ++i){
+		if (m_buffer[i] == '\0'){
 			break;
-		}
-		else
-		{
-			c = '\0';
+		} else {
+			m_buffer[i] = '\0';
 		}
 	}
+}
+
+template <typename Context>
+inline void ServerTCP<Context>::set_no_delay(int a_socket, bool a_no_delay)
+{
+	int yes = (a_no_delay ? 1 : 0);
+	setsockopt(a_socket, IPPROTO_TCP, TCP_NODELAY, (char *)&yes, sizeof(int));
+}
+
+template <typename Context>
+inline void ServerTCP<Context>::set_recieve_timeout(int a_socket, size_t a_seconds, size_t a_microseconds)
+{
+	struct timeval tv;
+	tv.tv_sec = a_seconds;
+	tv.tv_usec = a_microseconds;
+	setsockopt(a_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
 }
 
 template <typename Context>
