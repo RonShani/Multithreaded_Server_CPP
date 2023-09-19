@@ -2,8 +2,7 @@
 #define TCP_SERVER_HPP
 
 #include "headers_included.hpp"
-
-typedef struct sockaddr_in SocketData;
+#include "server_data.hpp"
 
 template <typename Context>
 class ServerTCP {
@@ -38,31 +37,25 @@ private:
 	int listen_main_socket();
 	int bind_socket();
 	int open_incomming_connections_socket();
-	int open_socket();
+	
 	int decrease_activity();
 	int recieve_from_client(int a_socket, char *a_buffer, size_t a_buffer_size, size_t a_starting_point, Client *a_client, bool a_is_threaded = false);
-	int thread_safe_decrease_activity();
 
 private:
 	bool client_no_recieve(int a_result, Client &a_client);
 	bool thread_safe_client_no_recieve(int a_result, Client *a_client);
 
 private:
+	static int open_socket();
 	static void read_incomming_heavy(ServerTCP *a_server, Client *_client);
 	size_t get_total_data_size(char *a_buffer, size_t a_read_already, int a_digit_number);
 	Client *get_client_by_id(int const &a_id);
 
 private:
 	Context &m_context;
-	struct sockaddr_in m_sin;
-	int m_listenningSocket;
+	ServerData m_server_data;
 	std::list<Client> m_clients;
-	int m_port;
-	int m_backLog;
-	fd_set m_fdSet;
 	char *m_buffer;
-	int m_activity;
-	int m_numberOfClients;
 	GotMessage<Context> m_gotMessage;
 	CloseClient<Context> m_closeClient;
 	NewClient<Context> m_newClient;
@@ -76,31 +69,19 @@ private:
 template <typename Context>
 ServerTCP<Context>::ServerTCP(int _port, int _backLog, GotMessage<Context> _gotMessage, CloseClient<Context> _closeClient, NewClient<Context> _newClient, OnFail<Context> _onFail, Context &_context, size_t a_buffer_size)
 : m_context(_context)
+, m_server_data(open_socket, _port, _backLog)
+, m_clients{}
 {
-	if (!_port || !_backLog || !_gotMessage){
-		return;
-	}
-	m_listenningSocket = open_socket();
-	if (m_listenningSocket == -1){
-		return;
-	}
 	m_closeClient = _closeClient;
 	m_newClient = _newClient;
 	m_gotMessage = _gotMessage;
 	m_onFail = _onFail;
-	m_port = _port;
-	m_backLog = _backLog;
-	m_numberOfClients = 0;
-	m_sin.sin_family = AF_INET;
-	m_sin.sin_port = htons(_port);
-	m_sin.sin_addr.s_addr = INADDR_ANY;
 	m_threads_count = 0;
 	m_buffer_size = a_buffer_size;
 	m_buffer = new char[m_buffer_size];
 	open_incomming_connections_socket();
 	bind_socket();
 	listen_main_socket();
-	std::list<Client> m_clients = std::list<Client>{};
 	clear_buffer();
 }
 
@@ -110,7 +91,7 @@ ServerTCP<Context>::~ServerTCP()
 	for (auto &client : m_clients){
 		close_all(client);
 	}
-	close(m_listenningSocket);
+	close(m_server_data.main_socket());
 	delete [] m_buffer;
 }
 
@@ -120,25 +101,24 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 	struct sockaddr_in sin;
 	socklen_t addrlen;
 	addrlen = sizeof(struct sockaddr_in);
-	if (m_listenningSocket == -1) {
+	if (not m_server_data.is_socket_ok()) {
 		m_onFail(-1, std::string{strerror(errno)}, m_context);
 		return ServerTCP_Status::SERVER_SOCKET_ERROR;
 	}
 
 	for(;;){
-		FD_ZERO(&(this->m_fdSet));
-		m_activity = 0;
-		FD_SET(this->m_listenningSocket, &(this->m_fdSet));
+		FD_ZERO(m_server_data.fd_main());
+		FD_SET(m_server_data.main_socket(), m_server_data.fd_main());
 		for (auto &client : m_clients){
 			socket_set(client);
 		}
-		m_activity = select(FD_SETSIZE, &(m_fdSet), NULL, NULL, NULL);
-		if (m_activity >= 0){
-			if (FD_ISSET(this->m_listenningSocket, &(this->m_fdSet))){
-				int new_sock = accept(m_listenningSocket, (struct sockaddr *)&sin, &addrlen);
+		m_server_data.activity() = select(FD_SETSIZE, m_server_data.fd_main(), NULL, NULL, NULL);
+		if (m_server_data.is_activity()){
+			if (FD_ISSET(m_server_data.main_socket(), m_server_data.fd_main())){
+				int new_sock = accept(m_server_data.main_socket(), m_server_data.sin(), &addrlen);
 				set_no_delay(new_sock, true);
 				if (new_sock >= 0){
-					if (m_numberOfClients >= m_backLog){
+					if (m_server_data.is_connections_full()){
 						close(new_sock);
 						m_onFail(new_sock, "Server busy", m_context);
 						m_closeClient(new_sock, m_context);
@@ -152,8 +132,8 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 				} else {
 					m_onFail(new_sock, std::string{strerror(errno)}, m_context);
 				}
-				--m_activity;
-				if (m_activity <= 0) {
+				m_server_data.activity_down();
+				if (not m_server_data.is_activity()) {
 					clean_up();
 				}
 			}
@@ -165,7 +145,7 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 	for (auto client : m_clients) {
 		close_all(client);
 	}
-	close(m_listenningSocket);
+	close(m_server_data.main_socket());
 	return ServerTCP_Status::SERVER_SUCCESS;
 }
 
@@ -211,7 +191,7 @@ void ServerTCP<Context>::add_client(struct sockaddr_in _sin, int _sock)
 {
 	Client client{_sock, _sin};
 	m_clients.push_back(client);
-	++m_numberOfClients;
+	m_server_data.client_up();
 }
 
 template <typename Context>
@@ -220,8 +200,8 @@ void ServerTCP<Context>::clean_up()
 	for (auto &client : m_clients) {
 		if (client.is_closed()) {
 			close(client.socket());
-			FD_CLR(client.socket(), &(m_fdSet));
-			--m_numberOfClients;
+			FD_CLR(client.socket(), m_server_data.fd_main());
+			m_server_data.client_down();
 			remove_client(client);
 		}
 	}
@@ -243,7 +223,6 @@ void ServerTCP<Context>::read_clients_data_income()
 				std::thread{read_incomming_heavy, this, &client}.detach();
 			}	
 		} else {
-
 			read_incomming_data(client);
 		}
 	}
@@ -252,7 +231,7 @@ void ServerTCP<Context>::read_clients_data_income()
 template <typename Context>
 void ServerTCP<Context>::socket_set(Client &_client)
 {
-	FD_SET(_client.socket(), &(this->m_fdSet));
+	FD_SET(_client.socket(), m_server_data.fd_main());
 }
 
 template <typename Context>
@@ -281,8 +260,7 @@ template <typename Context>
 int ServerTCP<Context>::read_incomming_data(Client &_client)
 {
 	int digit_number = 5;
-	fd_set m_fdSet_copy = this->m_fdSet;
-	if (FD_ISSET(_client.socket(), &(m_fdSet_copy))){
+	if (FD_ISSET(_client.socket(), m_server_data.fd_copy())){
 		try{
 			size_t read_already = recieve_from_client(_client.socket(), m_buffer, m_buffer_size, 0, &_client);
 			size_t read_remain = get_total_data_size(m_buffer, read_already, digit_number);
@@ -309,7 +287,6 @@ int ServerTCP<Context>::recieve_from_client(int a_socket, char *a_buffer, size_t
 	int result = recv(a_socket, a_buffer, a_buffer_size, a_starting_point);
 	if (a_is_threaded){
 		if(thread_safe_client_no_recieve(result, a_client)){
-			delete [] a_buffer;
 			throw "error recieving";
 		}
 	} else if(client_no_recieve(result, *a_client)){
@@ -346,6 +323,7 @@ void ServerTCP<Context>::read_incomming_heavy(ServerTCP *a_server, Client *_clie
 				a_server->m_gotMessage(*_client, _client->socket(), &local_buff[4+digit_number], read_already-4-digit_number, a_server->m_context);
 			}
 		} catch(...) {
+			delete [] local_buff;
 			return;
 		}
 	}
@@ -358,7 +336,7 @@ inline bool ServerTCP<Context>::client_no_recieve(int a_result, Client &a_client
 	if(a_result <= 0){
 		m_onFail(a_client.socket(), strerror(errno), m_context);
 		m_closeClient(a_client.socket(), m_context);
-		FD_CLR(a_client.socket(), &(this->m_fdSet));
+		FD_CLR(a_client.socket(), m_server_data.fd_main());
 		a_client.close();
 		return true;
 	}
@@ -393,19 +371,8 @@ Client *ServerTCP<Context>::get_client_by_id(int const &a_id)
 template <typename Context>
 inline int ServerTCP<Context>::decrease_activity()
 {
-	--m_activity;
-	if (m_activity <= 0){
-		return 0;
-	}
-	return 1;
-}
-
-template <typename Context>
-inline int ServerTCP<Context>::thread_safe_decrease_activity()
-{
-	--m_activity;
-	if (m_activity <= 0){
-		--m_threads_count;
+	m_server_data.activity_down();
+	if (m_server_data.is_activity()){
 		return 0;
 	}
 	return 1;
@@ -420,7 +387,7 @@ template <typename Context>
 int ServerTCP<Context>::open_incomming_connections_socket()
 {
 	int optval = 1;
-	if (setsockopt(m_listenningSocket, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
+	if (setsockopt(m_server_data.main_socket(), SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) < 0) {
 		perror("reuse failed");
 		return 0;
 	}
@@ -430,9 +397,9 @@ int ServerTCP<Context>::open_incomming_connections_socket()
 template <typename Context>
 int ServerTCP<Context>::bind_socket()
 {
-	if ((bind(m_listenningSocket, (struct sockaddr *)&(m_sin), sizeof(struct sockaddr_in))) != 0) {
+	if ((bind(m_server_data.main_socket(), m_server_data.sin(), m_server_data.address_size())) != 0) {
 		perror("bind failed");
-		close(m_listenningSocket);
+		close(m_server_data.main_socket());
 		return 0;
 	}
 	return 1;
@@ -441,9 +408,9 @@ int ServerTCP<Context>::bind_socket()
 template <typename Context>
 int ServerTCP<Context>::listen_main_socket()
 {
-	if ((listen(m_listenningSocket, m_backLog)) < 0) {
+	if ((listen(m_server_data.main_socket(), m_server_data.back_log())) < 0) {
 		perror("listen failed");
-		close(m_listenningSocket);
+		close(m_server_data.main_socket());
 		return 0;
 	}
 	return 1;
@@ -465,7 +432,7 @@ template <typename Context>
 void ServerTCP<Context>::close_client(Client &_client)
 {
 	close(_client.socket());
-	--m_numberOfClients;
+	m_server_data.client_down();
 	m_onFail(_client.socket(), strerror(errno), m_context);
 	m_closeClient(_client.socket(), m_context);
 	remove_client(_client);
