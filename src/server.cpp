@@ -38,10 +38,10 @@ void RemoteAIServer::close_client(int _id, RemoteAIServer &_context)
     std::cerr << "Client " <<_id<<" closed"<<std::endl;
 }
 
-int RemoteAIServer::new_client(int _id, RemoteAIServer &a_server)
+bool RemoteAIServer::new_client(int _id, RemoteAIServer &a_server)
 {
     a_server.m_server.send_message(a_server.m_ok, _id);
-    return 1;
+    return true;
 }
 
 void RemoteAIServer::on_fail(int _id, std::string const &_err, RemoteAIServer &_context)

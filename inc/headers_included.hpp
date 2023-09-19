@@ -17,11 +17,12 @@
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <iostream>
-#include "client.hpp"
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+
+#include "client.hpp"
 #include "server_status.hpp"
 
 
@@ -32,7 +33,7 @@ template <class Context>
 using CloseClient = void (*)(int _id, Context &_context);
 
 template <class Context>
-using NewClient = int (*)(int _id, Context &_context);
+using NewClient = bool (*)(int _id, Context &_context);
 
 template <class Context>
 using OnFail = void (*)(int _id, std::string const &_err, Context &_context);

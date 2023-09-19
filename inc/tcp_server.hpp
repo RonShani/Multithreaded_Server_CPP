@@ -3,18 +3,19 @@
 
 #include "headers_included.hpp"
 #include "server_data.hpp"
+#include "server_buffer.hpp"
 
 template <typename Context>
 class ServerTCP {
 public:
-	ServerTCP(int _port, int _backLog, GotMessage<Context> _gotMessage, CloseClient<Context> _closeClient, NewClient<Context> _newClient, OnFail<Context> _onFail, Context &_context, size_t a_buffer_size = 1024);
+	ServerTCP(int a_port, int a_back_log, GotMessage<Context> a_got_message, CloseClient<Context> a_close_client, NewClient<Context> a_new_client, OnFail<Context> a_on_fail, Context &a_context, size_t a_buffer_size = 1024);
 	~ServerTCP();
 	
 	ServerTCP_Status run_server();
-	ServerTCP_Status send_message(std::string const &_data, int _sock);
-	ServerTCP_Status send_message_raw(const char *_data, size_t a_len, int _sock);
+	ServerTCP_Status send_message(std::string const &a_data, int a_sock);
+	ServerTCP_Status send_message_raw(const char *a_data, size_t a_len, int a_sock);
 
-	void close_client(Client &_client);
+	void close_client(Client &a_client);
 	char *get_buffer();
 
 private:
@@ -22,22 +23,21 @@ private:
 	void set_recieve_timeout(int a_socket, size_t a_seconds, size_t a_microseconds);
 
 private:
-	void add_client(struct sockaddr_in _sin, int _sock);
+	void add_client(struct sockaddr_in a_sin, int a_sock);
 	void read_clients_data_income();
-	void remove_client(Client &_client);
+	void remove_client(Client &a_client);
 	void remove_client(int const &);
 	void clean_up();
-	void close_all(Client &_client);
-	void socket_set(Client &_client);
+	void close_all(Client &a_client);
+	void socket_set(Client &a_client);
 	void clear_buffer();
 
 private:
 	int read_incomming_data(int const &);
-	int read_incomming_data(Client &_client);
+	int read_incomming_data(Client &a_client);
 	int listen_main_socket();
 	int bind_socket();
 	int open_incomming_connections_socket();
-	
 	int decrease_activity();
 	int recieve_from_client(int a_socket, char *a_buffer, size_t a_buffer_size, size_t a_starting_point, Client *a_client, bool a_is_threaded = false);
 
@@ -47,7 +47,7 @@ private:
 
 private:
 	static int open_socket();
-	static void read_incomming_heavy(ServerTCP *a_server, Client *_client);
+	static void read_incomming_heavy(ServerTCP *a_server, Client *a_client);
 	size_t get_total_data_size(char *a_buffer, size_t a_read_already, int a_digit_number);
 	Client *get_client_by_id(int const &a_id);
 
@@ -55,30 +55,28 @@ private:
 	Context &m_context;
 	ServerData m_server_data;
 	std::list<Client> m_clients;
-	char *m_buffer;
-	GotMessage<Context> m_gotMessage;
-	CloseClient<Context> m_closeClient;
-	NewClient<Context> m_newClient;
-	OnFail<Context> m_onFail;
+	BufferManager m_buffer;
+	GotMessage<Context> m_got_message;
+	CloseClient<Context> m_close_client;
+	NewClient<Context> m_new_client;
+	OnFail<Context> m_on_fail;
 	std::mutex m_mutex;
-	std::condition_variable m_cv;
 	std::atomic<u_int8_t> m_threads_count;
-	size_t m_buffer_size;
 };
 
 template <typename Context>
-ServerTCP<Context>::ServerTCP(int _port, int _backLog, GotMessage<Context> _gotMessage, CloseClient<Context> _closeClient, NewClient<Context> _newClient, OnFail<Context> _onFail, Context &_context, size_t a_buffer_size)
-: m_context(_context)
-, m_server_data(open_socket, _port, _backLog)
+ServerTCP<Context>::ServerTCP(int a_port, int a_back_log, GotMessage<Context> a_got_message, CloseClient<Context> a_close_client, NewClient<Context> a_new_client, OnFail<Context> a_on_fail, Context &a_context, size_t a_buffer_size)
+: m_context(a_context)
+, m_server_data(open_socket, a_port, a_back_log)
 , m_clients{}
+, m_buffer{a_buffer_size}
+, m_got_message(a_got_message)
+, m_close_client(a_close_client)
+, m_new_client(a_new_client)
+, m_on_fail(a_on_fail)
+, m_mutex{}
+, m_threads_count(0)
 {
-	m_closeClient = _closeClient;
-	m_newClient = _newClient;
-	m_gotMessage = _gotMessage;
-	m_onFail = _onFail;
-	m_threads_count = 0;
-	m_buffer_size = a_buffer_size;
-	m_buffer = new char[m_buffer_size];
 	open_incomming_connections_socket();
 	bind_socket();
 	listen_main_socket();
@@ -92,7 +90,6 @@ ServerTCP<Context>::~ServerTCP()
 		close_all(client);
 	}
 	close(m_server_data.main_socket());
-	delete [] m_buffer;
 }
 
 template <typename Context>
@@ -102,7 +99,7 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 	socklen_t addrlen;
 	addrlen = sizeof(struct sockaddr_in);
 	if (not m_server_data.is_socket_ok()) {
-		m_onFail(-1, std::string{strerror(errno)}, m_context);
+		m_on_fail(-1, std::string{strerror(errno)}, m_context);
 		return ServerTCP_Status::SERVER_SOCKET_ERROR;
 	}
 
@@ -120,17 +117,17 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 				if (new_sock >= 0){
 					if (m_server_data.is_connections_full()){
 						close(new_sock);
-						m_onFail(new_sock, "Server busy", m_context);
-						m_closeClient(new_sock, m_context);
+						m_on_fail(new_sock, "Server busy", m_context);
+						m_close_client(new_sock, m_context);
 					} else {
-						if (!m_newClient(new_sock, m_context)){
+						if (!m_new_client(new_sock, m_context)){
 							close(new_sock);
 						} else {
 							add_client(sin, new_sock);
 						}
 					}
 				} else {
-					m_onFail(new_sock, std::string{strerror(errno)}, m_context);
+					m_on_fail(new_sock, std::string{strerror(errno)}, m_context);
 				}
 				m_server_data.activity_down();
 				if (not m_server_data.is_activity()) {
@@ -150,14 +147,14 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 }
 
 template <typename Context>
-ServerTCP_Status ServerTCP<Context>::send_message(std::string const &_data, int _sock)
+ServerTCP_Status ServerTCP<Context>::send_message(std::string const &a_data, int a_sock)
 {
 	int sent_bytes = -1;
 	try{
-		sent_bytes = send(_sock, _data.data(), _data.size(), 0);
+		sent_bytes = send(a_sock, a_data.data(), a_data.size(), 0);
 	} catch(...){
 		if (sent_bytes < 0){
-			m_onFail(_sock, std::string{strerror(errno)}, m_context);
+			m_on_fail(a_sock, std::string{strerror(errno)}, m_context);
 			return ServerTCP_Status::SERVER_SEND_FAIL;
 		}
 	}
@@ -165,14 +162,14 @@ ServerTCP_Status ServerTCP<Context>::send_message(std::string const &_data, int 
 }
 
 template <typename Context>
-ServerTCP_Status ServerTCP<Context>::send_message_raw(const char *_data, size_t a_len, int _sock)
+ServerTCP_Status ServerTCP<Context>::send_message_raw(const char *a_data, size_t a_len, int a_sock)
 {
 	int sent_bytes = -1;
 	try{
-		sent_bytes = send(_sock, _data, a_len, 0);
+		sent_bytes = send(a_sock, a_data, a_len, 0);
 	} catch(...) {
 		if (sent_bytes < 0){
-			m_onFail(_sock, std::string{strerror(errno)}, m_context);
+			m_on_fail(a_sock, std::string{strerror(errno)}, m_context);
 			return ServerTCP_Status::SERVER_SEND_FAIL;
 		}
 	}
@@ -180,16 +177,16 @@ ServerTCP_Status ServerTCP<Context>::send_message_raw(const char *_data, size_t 
 }
 
 template <typename Context>
-void ServerTCP<Context>::close_all(Client &_client)
+void ServerTCP<Context>::close_all(Client &a_client)
 {
-	close(_client.socket());
-	m_closeClient(_client.socket(), m_context);
+	close(a_client.socket());
+	m_close_client(a_client.socket(), m_context);
 }
 
 template <typename Context>
-void ServerTCP<Context>::add_client(struct sockaddr_in _sin, int _sock)
+void ServerTCP<Context>::add_client(struct sockaddr_in a_sin, int a_sock)
 {
-	Client client{_sock, _sin};
+	Client client{a_sock, a_sin};
 	m_clients.push_back(client);
 	m_server_data.client_up();
 }
@@ -220,6 +217,7 @@ void ServerTCP<Context>::read_clients_data_income()
 			} else {
 				client.set_action();
 				++m_threads_count;
+				FD_CLR(client.socket(), m_server_data.fd_main());
 				std::thread{read_incomming_heavy, this, &client}.detach();
 			}	
 		} else {
@@ -229,16 +227,16 @@ void ServerTCP<Context>::read_clients_data_income()
 }
 
 template <typename Context>
-void ServerTCP<Context>::socket_set(Client &_client)
+void ServerTCP<Context>::socket_set(Client &a_client)
 {
-	FD_SET(_client.socket(), m_server_data.fd_main());
+	FD_SET(a_client.socket(), m_server_data.fd_main());
 }
 
 template <typename Context>
-void ServerTCP<Context>::remove_client(Client &_client)
+void ServerTCP<Context>::remove_client(Client &a_client)
 {
 	for (auto it = m_clients.begin(); it != m_clients.end(); ++it) {
-		if (it->socket() == _client.socket()) {
+		if (it->socket() == a_client.socket()) {
 			m_clients.erase(it);
 			return;
 		}
@@ -257,22 +255,22 @@ void ServerTCP<Context>::remove_client(int const &a_id)
 }
 
 template <typename Context>
-int ServerTCP<Context>::read_incomming_data(Client &_client)
+int ServerTCP<Context>::read_incomming_data(Client &a_client)
 {
 	int digit_number = 5;
-	if (FD_ISSET(_client.socket(), m_server_data.fd_copy())){
+	if (FD_ISSET(a_client.socket(), m_server_data.fd_copy())){
 		try{
-			size_t read_already = recieve_from_client(_client.socket(), m_buffer, m_buffer_size, 0, &_client);
-			size_t read_remain = get_total_data_size(m_buffer, read_already, digit_number);
+			size_t read_already = recieve_from_client(a_client.socket(), m_buffer.buffer(), m_buffer.buffer_size(), 0, &a_client);
+			size_t read_remain = get_total_data_size(m_buffer.buffer(), read_already, digit_number);
 			while(read_already < read_remain){
-				read_already += recieve_from_client(_client.socket(), m_buffer, m_buffer_size, read_already, &_client);
+				read_already += recieve_from_client(a_client.socket(), m_buffer.buffer(), m_buffer.buffer_size(), read_already, &a_client);
 			}
 			if(read_already > 1000){
-				_client.heavy() = true;
+				a_client.heavy() = true;
 			}
-			m_buffer[read_already]='\0';
+			*(m_buffer.buffer(read_already))='\0';
 			if (read_already > 0){
-				m_gotMessage(_client, _client.socket(), &m_buffer[4+digit_number], read_already-4-digit_number, m_context);
+				m_got_message(a_client, a_client.socket(), m_buffer.buffer(4+digit_number), read_already-4-digit_number, m_context);
 			}
 		} catch(...) {
 			return decrease_activity();
@@ -308,22 +306,22 @@ size_t ServerTCP<Context>::get_total_data_size(char *a_buffer, size_t a_read_alr
 template <typename Context>
 void ServerTCP<Context>::read_incomming_heavy(ServerTCP *a_server, Client *_client)
 {
-	char *local_buff = new char[a_server->m_buffer_size];
+	size_t buffer_size = a_server->m_buffer.buffer_size();
+	BufferManager local_buff{buffer_size};
 	int digit_number = 5;
 	for(;;){
 		try{
-			size_t read_already = a_server->recieve_from_client(_client->socket(), local_buff, a_server->m_buffer_size, 0, _client, true);
-			std::string data{local_buff, read_already};
-			size_t read_remain = a_server->get_total_data_size(local_buff, read_already, digit_number);
+			size_t read_already = a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, 0, _client, true);
+			std::string data{local_buff.buffer(), read_already};
+			size_t read_remain = a_server->get_total_data_size(local_buff.buffer(), read_already, digit_number);
 			while(read_already < read_remain){
-				read_already += a_server->recieve_from_client(_client->socket(), local_buff, a_server->m_buffer_size, read_already, _client, true);
+				read_already += a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, read_already, _client, true);
 			}
-			local_buff[read_already]='\0';
+			*(local_buff.buffer(read_already))='\0';
 			if (read_already > 0){
-				a_server->m_gotMessage(*_client, _client->socket(), &local_buff[4+digit_number], read_already-4-digit_number, a_server->m_context);
+				a_server->m_got_message(*_client, _client->socket(), local_buff.buffer(4+digit_number), read_already-4-digit_number, a_server->m_context);
 			}
 		} catch(...) {
-			delete [] local_buff;
 			return;
 		}
 	}
@@ -334,8 +332,8 @@ template <typename Context>
 inline bool ServerTCP<Context>::client_no_recieve(int a_result, Client &a_client)
 {
 	if(a_result <= 0){
-		m_onFail(a_client.socket(), strerror(errno), m_context);
-		m_closeClient(a_client.socket(), m_context);
+		m_on_fail(a_client.socket(), strerror(errno), m_context);
+		m_close_client(a_client.socket(), m_context);
 		FD_CLR(a_client.socket(), m_server_data.fd_main());
 		a_client.close();
 		return true;
@@ -348,8 +346,8 @@ bool ServerTCP<Context>::thread_safe_client_no_recieve(int a_result, Client *a_c
 {
 	std::lock_guard<std::mutex> lock(m_mutex);
 	if(a_result <= 0){
-		m_onFail(a_client->socket(), strerror(errno), m_context);
-		m_closeClient(a_client->socket(), m_context);
+		m_on_fail(a_client->socket(), strerror(errno), m_context);
+		m_close_client(a_client->socket(), m_context);
 		a_client->close();
 		--m_threads_count;
 		return true;
@@ -429,25 +427,19 @@ int ServerTCP<Context>::open_socket()
 }
 
 template <typename Context>
-void ServerTCP<Context>::close_client(Client &_client)
+void ServerTCP<Context>::close_client(Client &a_client)
 {
-	close(_client.socket());
+	close(a_client.socket());
 	m_server_data.client_down();
-	m_onFail(_client.socket(), strerror(errno), m_context);
-	m_closeClient(_client.socket(), m_context);
-	remove_client(_client);
+	m_on_fail(a_client.socket(), strerror(errno), m_context);
+	m_close_client(a_client.socket(), m_context);
+	remove_client(a_client);
 }
 
 template <typename Context>
 void ServerTCP<Context>::clear_buffer()
 {
-	for (size_t i = 0; i < m_buffer_size; ++i){
-		if (m_buffer[i] == '\0'){
-			break;
-		} else {
-			m_buffer[i] = '\0';
-		}
-	}
+	m_buffer.clear_buffer();
 }
 
 template <typename Context>
@@ -469,7 +461,7 @@ inline void ServerTCP<Context>::set_recieve_timeout(int a_socket, size_t a_secon
 template <typename Context>
 char *ServerTCP<Context>::get_buffer()
 {
-	return m_buffer;
+	return m_buffer.buffer();
 }
 
 #endif /* TCP_SERVER_HPP */

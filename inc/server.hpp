@@ -17,7 +17,7 @@ public:
 private:
     static void read_income(Client &a_client, int _id, char *_msg, int _length, RemoteAIServer &_context);
     static void close_client(int _id, RemoteAIServer &_context);
-    static int new_client(int _id, RemoteAIServer &_context);
+    static bool new_client(int _id, RemoteAIServer &_context);
     static void on_fail(int _id, std::string const &_err, RemoteAIServer &_context);
     bool is_subscribe(std::string const &a_msg);
     bool is_publish(std::string const &a_msg);
