@@ -28,7 +28,7 @@ private:
 	void remove_client(Client &a_client);
 	void remove_client(int const &);
 	void clean_up();
-	void close_all(Client &a_client);
+	void close_client_fd(Client &a_client);
 	void socket_set(Client &a_client);
 	void clear_buffer();
 
@@ -87,7 +87,7 @@ template <typename Context>
 ServerTCP<Context>::~ServerTCP()
 {
 	for (auto &client : m_clients){
-		close_all(client);
+		close_client_fd(client);
 	}
 	close(m_server_data.main_socket());
 }
@@ -140,7 +140,7 @@ ServerTCP_Status ServerTCP<Context>::run_server()
 		}
 	}
 	for (auto client : m_clients) {
-		close_all(client);
+		close_client_fd(client);
 	}
 	close(m_server_data.main_socket());
 	return ServerTCP_Status::SERVER_SUCCESS;
@@ -177,7 +177,7 @@ ServerTCP_Status ServerTCP<Context>::send_message_raw(const char *a_data, size_t
 }
 
 template <typename Context>
-void ServerTCP<Context>::close_all(Client &a_client)
+void ServerTCP<Context>::close_client_fd(Client &a_client)
 {
 	close(a_client.socket());
 	m_close_client(a_client.socket(), m_context);
