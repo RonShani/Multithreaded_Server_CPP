@@ -263,11 +263,12 @@ int ServerTCP<Context>::read_incomming_data(Client &a_client)
 			size_t read_already = recieve_from_client(a_client.socket(), m_buffer.buffer(), m_buffer.buffer_size(), 0, &a_client);
 			size_t read_remain = get_total_data_size(m_buffer.buffer(), read_already, digit_number);
 			while(read_already < read_remain){
-				read_already += recieve_from_client(a_client.socket(), m_buffer.buffer(), m_buffer.buffer_size(), read_already, &a_client);
+				read_already += recieve_from_client(a_client.socket(), m_buffer.buffer(read_already), m_buffer.buffer_size(), 0, &a_client);
 			}
 			if(read_already > 1000){
 				a_client.heavy() = true;
 			}
+			
 			*(m_buffer.buffer(read_already))='\0';
 			if (read_already > 0){
 				m_got_message(a_client, a_client.socket(), m_buffer.buffer(4+digit_number), read_already-4-digit_number, m_context);
@@ -282,7 +283,7 @@ int ServerTCP<Context>::read_incomming_data(Client &a_client)
 template <typename Context>
 int ServerTCP<Context>::recieve_from_client(int a_socket, char *a_buffer, size_t a_buffer_size, size_t a_starting_point, Client *a_client, bool a_is_threaded)
 {
-	int result = recv(a_socket, a_buffer, a_buffer_size, a_starting_point);
+	int result = recv(a_socket, &a_buffer[a_starting_point], a_buffer_size, 0);
 	if (a_is_threaded){
 		if(thread_safe_client_no_recieve(result, a_client)){
 			throw "error recieving";

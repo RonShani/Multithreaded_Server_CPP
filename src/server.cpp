@@ -14,6 +14,7 @@ void RemoteAIServer::read_income(Client &a_client, int _id, char *_msg, int _len
 {
     std::string seq{_msg, size_t(_length)};
     Topic topic_name;
+    
     if(a_server.is_subscribe(seq)){
         Topic new_sub{a_server.get_topic(seq)};
         a_server.m_subscribers[new_sub].emplace_back(_id, a_client.addr());

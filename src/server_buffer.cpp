@@ -4,6 +4,7 @@ BufferManager::BufferManager(size_t a_size)
 : m_buffer{new char[a_size]}
 , m_buffer_size{a_size}
 {
+	clear_buffer();
 }
 
 char *BufferManager::buffer()
