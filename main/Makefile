@@ -6,8 +6,9 @@ CC = $(CXX)
 CFLAGS = -Wall -Werror
 CFLAGS+= -Wextra
 CFLAGS+= -pedantic
-CFLAGS+= -DDEBUG
-CFLAGS+= -g
+CFLAGS+= -O3
+#CFLAGS+= -DDEBUG
+#CFLAGS+= -g
 
 CXXFLAGS = $(CFLAGS)
 CXXFLAGS += -std=c++17
@@ -15,7 +16,7 @@ CXXFLAGS += -std=c++17
 # flags for preprocessor
 CPPFLAGS = -I$(INC_PATH)/
 
-OBJECTS = $(SRC_PATH)/server_buffer.o $(SRC_PATH)/server_data.o $(SRC_PATH)/server.o $(SRC_PATH)/topic.o $(SRC_PATH)/found_object.o $(SRC_PATH)/client.o utest.o
+OBJECTS = $(SRC_PATH)/timer.o $(SRC_PATH)/server_buffer.o $(SRC_PATH)/server_data.o $(SRC_PATH)/server.o $(SRC_PATH)/topic.o $(SRC_PATH)/found_object.o $(SRC_PATH)/client.o utest.o
 
 TARGET = utest
 
@@ -39,4 +40,5 @@ topic.o: $(INC_PATH)/topic.hpp
 server.o: $(INC_PATH)/server.hpp $(INC_PATH)/tcp_server.hpp
 server_data.o: $(INC_PATH)/server_data.hpp
 server_buffer.o: $(INC_PATH)/server_buffer.hpp
+timer.o: $(INC_PATH)/timer.hpp
 utest.o: $(INC_PATH)/server.hpp

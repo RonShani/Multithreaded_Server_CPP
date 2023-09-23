@@ -264,6 +264,7 @@ int ServerTCP<Context>::read_incomming_data(Client &a_client)
 			size_t read_remain = get_total_data_size(m_buffer.buffer(), read_already, digit_number);
 			while(read_already < read_remain){
 				read_already += recieve_from_client(a_client.socket(), m_buffer.buffer(read_already), m_buffer.buffer_size(), 0, &a_client);
+				std::cout<<"read "<<read_already<<" total "<<read_remain<<"\n";
 			}
 			if(read_already > 1000){
 				a_client.heavy() = true;
@@ -272,12 +273,51 @@ int ServerTCP<Context>::read_incomming_data(Client &a_client)
 			*(m_buffer.buffer(read_already))='\0';
 			if (read_already > 0){
 				m_got_message(a_client, a_client.socket(), m_buffer.buffer(4+digit_number), read_already-4-digit_number, m_context);
+				m_buffer.clear_buffer();
 			}
 		} catch(...) {
 			return decrease_activity();
 		}
 	}
 	return 1;
+}
+
+template <typename Context>
+void ServerTCP<Context>::read_incomming_heavy(ServerTCP *a_server, Client *_client)
+{
+	size_t buffer_size = a_server->m_buffer.buffer_size();
+	BufferManager local_buff{buffer_size};
+	int digit_number = 5;
+	int result = 0;
+	for(;;){
+		size_t read_already = 0;
+		size_t read_remain = 0;
+		try{
+			read_already = a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, 0, _client, true);
+			std::string data{local_buff.buffer(), read_already};
+			read_remain = a_server->get_total_data_size(local_buff.buffer(), read_already, digit_number);
+			while(read_already < read_remain){
+				result = 0;
+				result = a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, read_already, _client, true);
+				read_already += result;
+				std::cout<<"read "<<read_already<<" total "<<read_remain<<"\n";
+			}
+			*(local_buff.buffer(read_already))='\0';
+			if (read_already > 0){
+				a_server->m_got_message(*_client, _client->socket(), local_buff.buffer(4+digit_number), read_already-4-digit_number, a_server->m_context);
+				local_buff.clear_buffer();
+				data.clear();
+			}
+		} catch(...) {
+			if(result > 0){
+				read_incomming_heavy(a_server, _client);
+			} else {
+				return;
+			}
+			
+		}
+	}
+	
 }
 
 template <typename Context>
@@ -302,31 +342,6 @@ size_t ServerTCP<Context>::get_total_data_size(char *a_buffer, size_t a_read_alr
 		data = data.substr(data.find(">>")+2, a_digit_number);
 	}
 	return std::stol(data);
-}
-
-template <typename Context>
-void ServerTCP<Context>::read_incomming_heavy(ServerTCP *a_server, Client *_client)
-{
-	size_t buffer_size = a_server->m_buffer.buffer_size();
-	BufferManager local_buff{buffer_size};
-	int digit_number = 5;
-	for(;;){
-		try{
-			size_t read_already = a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, 0, _client, true);
-			std::string data{local_buff.buffer(), read_already};
-			size_t read_remain = a_server->get_total_data_size(local_buff.buffer(), read_already, digit_number);
-			while(read_already < read_remain){
-				read_already += a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, read_already, _client, true);
-			}
-			*(local_buff.buffer(read_already))='\0';
-			if (read_already > 0){
-				a_server->m_got_message(*_client, _client->socket(), local_buff.buffer(4+digit_number), read_already-4-digit_number, a_server->m_context);
-			}
-		} catch(...) {
-			return;
-		}
-	}
-	
 }
 
 template <typename Context>

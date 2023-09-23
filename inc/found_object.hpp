@@ -4,14 +4,15 @@
 #include <ctime>
 #include <string>
 
-#include "roi.hpp"
-
 class FoundObject{
 public:
-    FoundObject() = default;
+    FoundObject();
     FoundObject(std::string const &a_data);
     FoundObject(FoundObject &a_data) = default;
     ~FoundObject() = default;
+
+    void set_published();
+    bool is_published() const;
 
 public:
     std::string &data();
@@ -19,6 +20,7 @@ public:
 
 private:
     std::string m_raw;
+    bool m_is_published;
 };
 
 
