@@ -1,4 +1,4 @@
-#define CAMERA_MODEL_WROVER_KIT
+#define CAMERA_MODEL_AI_THINKER//CAMERA_MODEL_WROVER_KIT
 
 #include "camera_manager.hpp"
 #include "esp_timer.h"
@@ -14,6 +14,7 @@ CameraManager::CameraManager()
 
 void CameraManager::begin()
 {
+  camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
@@ -32,17 +33,17 @@ void CameraManager::begin()
   config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 12000000;
+  config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-
+   
   if(psramFound()){
-    config.frame_size = FRAMESIZE_QQVGA;//FRAMESIZE_UXGA;
+    config.frame_size = FRAMESIZE_QVGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
     config.jpeg_quality = 20;
     config.fb_count = 2;
   } else {
-    config.frame_size = FRAMESIZE_QQVGA;//FRAMESIZE_SVGA;
-    config.jpeg_quality = 20;
-    config.fb_count = 2;
+    config.frame_size = FRAMESIZE_QVGA;
+    config.jpeg_quality = 30;
+    config.fb_count = 1;
   }
 
   esp_err_t err = esp_camera_init(&config);
@@ -52,14 +53,7 @@ void CameraManager::begin()
   }
 
   sensor_t * s = esp_camera_sensor_get();
-  // initial sensors are flipped vertically and colors are a bit saturated
-  if (s->id.PID == OV3660_PID) {
-    s->set_vflip(s, 1); // flip it back
-    s->set_brightness(s, 1); // up the brightness just a bit
-    s->set_saturation(s, -2); // lower the saturation
-  }
-  // drop down frame size for higher initial frame rate
-  s->set_framesize(s, FRAMESIZE_QQVGA);
+  s->set_framesize(s, FRAMESIZE_QVGA);
 }
 
 void CameraManager::ask_stream()
@@ -83,6 +77,7 @@ void CameraManager::capture_image(local_action a_action)
     Serial.println("failed to get camera");
     return;
   }
+  delay(25);
   a_action(fb->buf, fb->len);
-  esp_camera_fb_return(fb);   
+  esp_camera_fb_return(fb);
 }

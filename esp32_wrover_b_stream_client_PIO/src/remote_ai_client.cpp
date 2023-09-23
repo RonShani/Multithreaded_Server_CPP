@@ -228,14 +228,14 @@ void RemoteAIClient::publish_two(const uint8_t *a_msg, size_t a_len, const uint8
 {
     char pre[10] = ">>00000<<";
     pre_msg(a_len+b_len, pre);
-    m_client.write(pre, 9);
+    m_client.write(pre, 10);
     m_client.write(a_msg, a_len);
     m_client.write(b_msg, b_len);
 }
 
 size_t RemoteAIClient::pre_msg(unsigned long a_len, char * pre)
 {
-    a_len+=9;
+    a_len+=10;
     int pos = 6 - int(log10(a_len));
     sprintf(&pre[pos], "%lu<<", a_len);
     return a_len+9;
