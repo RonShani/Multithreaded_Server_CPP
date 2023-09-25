@@ -1,4 +1,4 @@
-#define CAMERA_MODEL_AI_THINKER//CAMERA_MODEL_WROVER_KIT
+#define CAMERA_MODEL_WROVER_KIT//CAMERA_MODEL_AI_THINKER//
 
 #include "camera_manager.hpp"
 #include "esp_timer.h"
@@ -33,15 +33,15 @@ void CameraManager::begin()
   config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 20000000;
+  config.xclk_freq_hz = 16000000;
   config.pixel_format = PIXFORMAT_JPEG;
    
   if(psramFound()){
-    config.frame_size = FRAMESIZE_QVGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+    config.frame_size = FRAMESIZE_QQVGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
     config.jpeg_quality = 20;
     config.fb_count = 2;
   } else {
-    config.frame_size = FRAMESIZE_QVGA;
+    config.frame_size = FRAMESIZE_QQVGA;
     config.jpeg_quality = 30;
     config.fb_count = 1;
   }
@@ -53,7 +53,7 @@ void CameraManager::begin()
   }
 
   sensor_t * s = esp_camera_sensor_get();
-  s->set_framesize(s, FRAMESIZE_QVGA);
+  s->set_framesize(s, FRAMESIZE_QQVGA);
 }
 
 void CameraManager::ask_stream()

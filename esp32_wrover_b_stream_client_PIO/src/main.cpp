@@ -27,7 +27,7 @@ void setup()
 */
   camera.begin();
   rai_client.begin();
-  rai_client.connect_host("10.0.0.37", 3000);
+  rai_client.connect_host("10.0.0.38", 3000);
   rai_client.topic_loader(topics, actions);
 }
 
