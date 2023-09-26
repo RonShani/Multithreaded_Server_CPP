@@ -77,7 +77,7 @@ void CameraManager::capture_image(local_action a_action)
     Serial.println("failed to get camera");
     return;
   }
-  delay(25);
-  a_action(fb->buf, fb->len);
+  delay(15);
+  a_action((char*)fb->buf, fb->len);
   esp_camera_fb_return(fb);
 }

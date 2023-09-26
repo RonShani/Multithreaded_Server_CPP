@@ -6,9 +6,9 @@
 #include "camera_pins.h"
 
 template <class Context>
-using img_act = void(Context&, unsigned char *, unsigned long);
+using img_act = void(Context&, char *, unsigned long);
 
-using local_action = void(*)(unsigned char *, unsigned long);
+using local_action = void(*)(char *, unsigned long);
 
 class CameraManager{
 public:

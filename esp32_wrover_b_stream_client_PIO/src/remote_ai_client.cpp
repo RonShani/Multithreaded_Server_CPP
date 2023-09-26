@@ -2,27 +2,30 @@
 #include "functionality.hpp"
 
 RemoteAIClient::RemoteAIClient(const char *a_ssid, const char *a_pass, ok_func a_signal_ok)
-: m_wifimulti{}, m_client{}, m_topics{}, m_timer{}, m_host{}, m_port{0}, m_signal_ok(a_signal_ok)
+: m_wifimulti{}, m_client{}, m_topics{}, m_host{}, m_port{0}, m_signal_ok(a_signal_ok), m_topics_context{(void*)this}
 {
     m_wifimulti.addAP(a_ssid, a_pass);
-
+    initialize_client();
 }
 
 void RemoteAIClient::connect_host(const char *host, const uint16_t port)
 {
-    while (!m_client.connect(host, port)) {
-        delay(10);
-        yield();
-    }
+    Serial.printf("connecting %s on port %d\n", host, port);
+    m_client.connect(host, port);
+    Serial.printf("Connected %d\n", m_client.state());
     m_client.setNoDelay(true);
-    response_action(250);
     if(port != m_port){
-        strcpy(m_host, host);
+        m_host.fromString(host);
         m_port = port;
     }
     if(m_topics.size() > 0){
         resubscribe_topics();
     }
+}
+
+void RemoteAIClient::connect_host(IPAddress const &a_ip, const uint16_t a_port)
+{
+    connect_host(a_ip.toString().c_str(), a_port);
 }
 
 void RemoteAIClient::begin()
@@ -34,9 +37,12 @@ void RemoteAIClient::begin()
 
 void RemoteAIClient::add_topic(String const &a_topic, Functionality *a_func, bool a_is_first_time)
 {
-    do{
-        publish("/sub/"+a_topic);
-    }while(!response_action(750, true, a_topic));
+    for(auto &topic : m_topics_context.topics()){
+        do{
+            publish("/sub/"+topic.first);
+            delay(250);
+        }while(!m_topics_context.validate_subject(topic.first));
+    }
     if (a_is_first_time){
         m_topics[a_topic] = a_func;
     }
@@ -53,24 +59,6 @@ void RemoteAIClient::remove_topic(String const &a_topic)
     }
 }
 
-bool RemoteAIClient::response_action(int a_recieve_timeout, bool a_is_validate_sub, String const &a_context)
-{
-    check_connection();
-    if(recieve_timeout(a_recieve_timeout)) return  false;
-    String line;
-    if(not read_income(line)) return false;
-    if(a_is_validate_sub){
-        return validate_subscription(line, a_context);
-    } else {
-        return act_upon_topic(line);
-    }
-}
-
-bool RemoteAIClient::is_topic(String const &a_topic, String &a_msg)
-{
-  return a_msg.startsWith(a_topic) || is_word_contained(a_msg, a_topic);
-}
-
 void RemoteAIClient::resubscribe_topics()
 {
     for(auto &topic : m_topics){
@@ -80,15 +68,14 @@ void RemoteAIClient::resubscribe_topics()
 
 void RemoteAIClient::topic_loader(std::vector<String> &a_topics, std::vector<Functionality> &a_func_vector)
 {
+    m_topics_context.clear_validations();
+    m_topics_context.validation() = true;
     for(size_t i = 0; i < a_topics.size(); ++i){
+        m_topics_context.add_subject(a_topics[i]);
         add_topic(a_topics[i], &a_func_vector[i]);
         m_signal_ok(a_topics[i]);
     }
-}
-
-void RemoteAIClient::publish(String const &a_topic, const char *a_data, unsigned long a_legnt)
-{
-    publish("@"+a_topic+"|"+String{a_data});
+    m_topics_context.validation() = false;
 }
 
 void RemoteAIClient::addAP(const char *a_ssid, const char *a_pass)
@@ -101,69 +88,9 @@ size_t RemoteAIClient::topics_size() const
     return m_topics.size();
 }
 
-size_t RemoteAIClient::find_shtrudel(String const &a_msg) const
-{
-    for(size_t i = 0; i < a_msg.length(); ++i){
-        if(a_msg[i] == '@'){
-            return i;
-        }
-    }
-    return a_msg.length();
-}
-
-bool RemoteAIClient::is_word_contained(String const &a_msg, String const &a_topic)
-{
-    size_t shtrudel = find_shtrudel(a_msg);
-    if(shtrudel == a_msg.length()){
-        return false;
-    }
-    size_t j = 0;
-    for(size_t i = shtrudel+1; i < a_topic.length()+shtrudel; ++i){
-        if(a_msg[i] == a_topic[j]){
-            ++j;
-        } else {
-            return false;
-        }
-    }
-    return true;
-}
-
-void RemoteAIClient::publish(const uint8_t *buf, size_t size)
-{
-    char pre[10] = ">>00000<<";
-    pre_msg(size, pre);
-    Serial.println(pre);
-    m_client.write(pre, 10);
-    m_client.write(buf, size);
-}
-
-void RemoteAIClient::publish_two(WiFiClient &a_client, const uint8_t *a_msg, size_t a_len, const uint8_t *b_msg, size_t b_len)
-{
-    char pre[10] = ">>00000<<";
-    pre_msg(a_len+b_len, pre);
-    Serial.println(pre);
-    a_client.write(pre, 10);
-    a_client.write(a_msg, a_len);
-    a_client.write(b_msg, b_len);
-}
-
-void RemoteAIClient::publish(String const &a_string)
-{
-    char pre[10] = ">>00000<<";
-    pre_msg(a_string.length(), pre);
-    Serial.println(pre);
-    m_client.write(pre, 10);
-    m_client.write(a_string.c_str(), a_string.length());
-}
-
 void RemoteAIClient::send_as_is(unsigned char *a_msg, unsigned long a_len)
 {
-    m_client.write(a_msg, a_len);
-}
-
-const unsigned char *RemoteAIClient::rv() const
-{
-    return m_rv;
+    m_client.write((char*)a_msg, a_len);
 }
 
 void RemoteAIClient::check_connection()
@@ -173,49 +100,12 @@ void RemoteAIClient::check_connection()
     }
 }
 
-bool RemoteAIClient::recieve_timeout(int a_timeout)
+void RemoteAIClient::act_upon_topic(String const &a_line)
 {
-    Timer timer;
-    while (m_client.available() == 0) {
-      delay(1);
-      yield();
-      if(timer.is_passed_ms(a_timeout))return true;
+    if(m_topics.find(a_line) == m_topics.end()){
+        return;
     }
-    return false;
-}
-
-bool RemoteAIClient::read_income(String &a_income)
-{
-    a_income = m_client.readStringUntil('\r');
-    if(a_income.length() == 0){
-        return false;
-    }
-    return true;
-}
-
-bool RemoteAIClient::act_upon_topic(String &a_line)
-{
-    for(auto &topic : m_topics){
-      if(is_topic(topic.first, a_line)){
-          topic.second->run();
-          return true;
-      }
-    }
-    return false;
-}
-
-bool RemoteAIClient::validate_subscription(String const &a_line, String const &a_topic)
-{
-    if(a_topic.compareTo(a_line) == 0){
-      return true;
-    } else {
-      return false;
-    }
-}
-
-void RemoteAIClient::send_img(RemoteAIClient &a_client, unsigned char *a_img, unsigned long a_len)
-{
-  publish_two(a_client.m_client, a_client.rv(),12, a_img, a_len);
+    m_topics[a_line]->run();
 }
 
 void RemoteAIClient::subscribed_ok(String const &a_msg)
@@ -224,11 +114,21 @@ void RemoteAIClient::subscribed_ok(String const &a_msg)
   Serial.println(a_msg);
 }
 
-void RemoteAIClient::publish_two(const uint8_t *a_msg, size_t a_len, const uint8_t *b_msg, size_t b_len)
+void RemoteAIClient::publish(const char *buf, size_t size)
 {
-    char pre[10] = ">>00000<<";
-    pre_msg(a_len+b_len, pre);
-    m_client.write(pre, 10);
+    write_pre_msg(size);
+    m_client.write(buf, size);
+}
+
+void RemoteAIClient::publish(String const &a_string)
+{
+    write_pre_msg(a_string.length());
+    m_client.write(a_string.c_str(), a_string.length());
+}
+
+void RemoteAIClient::publish_two(const char *a_msg, size_t a_len, const char *b_msg, size_t b_len)
+{
+    write_pre_msg(a_len+b_len);
     m_client.write(a_msg, a_len);
     m_client.write(b_msg, b_len);
 }
@@ -241,3 +141,57 @@ size_t RemoteAIClient::pre_msg(unsigned long a_len, char * pre)
     return a_len+9;
 }
 
+void RemoteAIClient::data_handler(void *a_context, AsyncClient *a_client, void *a_data, size_t len)
+{
+    DataContext *ctx = (DataContext*)a_context;
+    if(ctx->validation()){
+        ctx->validate_subject((char*)a_data, len);
+    } else {
+        String line = ctx->to_string((char*)a_data, len);
+        if(line[0] == '@'){
+            //Serial.printf("topic is: %s\n", line.substring(1, line.length()-1));
+            ((RemoteAIClient*)ctx->client())->act_upon_topic(line.substring(1, line.length()-1));
+        }
+    }
+}
+
+void RemoteAIClient::error_handler(void *a_context, AsyncClient *a_client, int8_t error)
+{
+    Serial.printf("Error: %s\n", a_client->errorToString(error));
+}
+
+void RemoteAIClient::connect_handler(void *a_context, AsyncClient *a_client)
+{
+    DataContext *ctx = (DataContext*)a_context;
+    Serial.printf("disconnected! trying to reconnect...\n");
+    ((RemoteAIClient*)ctx->client())->reconnect_host();
+}
+
+void RemoteAIClient::write_pre_msg(unsigned long a_len)
+{
+    char pre[10] = ">>00000<<";
+    pre_msg(a_len, pre);
+    m_client.write(pre, 10);
+}
+
+void RemoteAIClient::initialize_client()
+{
+    m_client.onData(RemoteAIClient::data_handler, &m_topics_context);
+    m_client.onError(RemoteAIClient::error_handler, &m_topics_context);
+    m_client.onDisconnect(RemoteAIClient::connect_handler, &m_topics_context);
+}
+
+void RemoteAIClient::reconnect_host()
+{
+    m_client.close();
+    while(!m_client.connected()){
+        delay(10);
+        connect_host({10,0,0,38}, m_port);   
+        yield();
+    }
+}
+
+const char *RemoteAIClient::rv() const
+{
+    return m_topics_context.rv();
+}
