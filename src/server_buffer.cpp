@@ -24,11 +24,13 @@ size_t BufferManager::buffer_size() const
 
 void BufferManager::clear_buffer()
 {
+	m_buffer.reset(new char[m_buffer_size]);
+	/*
 	for (size_t i = 0; i < m_buffer_size; ++i){
 		if ((&*m_buffer)[i] == '\0'){
 			break;
 		} else {
 			(&*m_buffer)[i] = '\0';
 		}
-	}
+	}*/
 }

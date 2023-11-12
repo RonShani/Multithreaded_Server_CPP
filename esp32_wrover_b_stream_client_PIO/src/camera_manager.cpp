@@ -1,5 +1,3 @@
-#define CAMERA_MODEL_WROVER_KIT//CAMERA_MODEL_AI_THINKER//
-
 #include "camera_manager.hpp"
 #include "esp_timer.h"
 #include "esp_camera.h"
@@ -33,7 +31,7 @@ void CameraManager::begin()
   config.pin_sscb_scl = SIOC_GPIO_NUM;
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
-  config.xclk_freq_hz = 16000000;
+  config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
    
   if(psramFound()){
@@ -58,6 +56,7 @@ void CameraManager::begin()
 
 void CameraManager::ask_stream()
 {
+  Serial.println("ask_stream started");
   m_is_stream = true;
 }
 
@@ -73,11 +72,12 @@ void CameraManager::capture_image(local_action a_action)
   }
   camera_fb_t * fb = NULL;
   fb = esp_camera_fb_get();
+  //delay(15);
   if (!fb) {
     Serial.println("failed to get camera");
     return;
   }
-  delay(15);
+  //delay(15);
   a_action((char*)fb->buf, fb->len);
   esp_camera_fb_return(fb);
 }

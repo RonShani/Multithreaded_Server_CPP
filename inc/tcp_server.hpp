@@ -264,18 +264,18 @@ int ServerTCP<Context>::read_incomming_data(Client &a_client)
 			size_t read_remain = get_total_data_size(m_buffer.buffer(), read_already, digit_number);
 			while(read_already < read_remain){
 				read_already += recieve_from_client(a_client.socket(), m_buffer.buffer(read_already), m_buffer.buffer_size(), 0, &a_client);
-				std::cout<<"read "<<read_already<<" total "<<read_remain<<"\n";
 			}
 			if(read_already > 1000){
 				a_client.heavy() = true;
 			}
-			
 			*(m_buffer.buffer(read_already))='\0';
+			
 			if (read_already > 0){
 				m_got_message(a_client, a_client.socket(), m_buffer.buffer(4+digit_number), read_already-4-digit_number, m_context);
 				m_buffer.clear_buffer();
 			}
 		} catch(...) {
+			std::cout<<"failed \n";
 			return decrease_activity();
 		}
 	}
@@ -290,23 +290,18 @@ void ServerTCP<Context>::read_incomming_heavy(ServerTCP *a_server, Client *_clie
 	int digit_number = 5;
 	int result = 0;
 	for(;;){
-		size_t read_already = 0;
-		size_t read_remain = 0;
 		try{
-			read_already = a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, 0, _client, true);
-			std::string data{local_buff.buffer(), read_already};
-			read_remain = a_server->get_total_data_size(local_buff.buffer(), read_already, digit_number);
+			size_t read_already = a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, 0, _client, true);
+			size_t read_remain =  a_server->get_total_data_size(local_buff.buffer(), read_already, digit_number);
 			while(read_already < read_remain){
 				result = 0;
 				result = a_server->recieve_from_client(_client->socket(), local_buff.buffer(), buffer_size, read_already, _client, true);
 				read_already += result;
-				std::cout<<"read "<<read_already<<" total "<<read_remain<<"\n";
 			}
 			*(local_buff.buffer(read_already))='\0';
 			if (read_already > 0){
 				a_server->m_got_message(*_client, _client->socket(), local_buff.buffer(4+digit_number), read_already-4-digit_number, a_server->m_context);
 				local_buff.clear_buffer();
-				data.clear();
 			}
 		} catch(...) {
 			if(result > 0){
@@ -360,7 +355,7 @@ inline bool ServerTCP<Context>::client_no_recieve(int a_result, Client &a_client
 template <typename Context>
 bool ServerTCP<Context>::thread_safe_client_no_recieve(int a_result, Client *a_client)
 {
-	std::lock_guard<std::mutex> lock(m_mutex);
+	//std::lock_guard<std::mutex> lock(m_mutex);
 	if(a_result <= 0){
 		m_on_fail(a_client->socket(), strerror(errno), m_context);
 		m_close_client(a_client->socket(), m_context);

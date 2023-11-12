@@ -1,6 +1,6 @@
 #ifndef CAMERA_MANAGER_HPP
 #define CAMERA_MANAGER_HPP
-#define CAMERA_MODEL_AI_THINKER
+#define CAMERA_MODEL_WROVER_KIT
 
 #include "esp_camera.h"
 #include "camera_pins.h"
@@ -21,7 +21,7 @@ public:
     void capture_image(img_act<Context>, Context &a_context);
 
     void begin();
-    void startCameraServer();
+    //void startCameraServer();
     static void ask_stream();
     static void ask_stop_stream();
 

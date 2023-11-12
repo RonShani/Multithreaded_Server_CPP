@@ -19,12 +19,12 @@ void send_img(char *a_img, unsigned long a_len)
 void setup()
 {
   Serial.begin(115200);
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
+  //WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
   Serial.setDebugOutput(true);
 
   camera.begin();
   rai_client.begin();
-  rai_client.connect_host("10.0.0.38", 3000);
+  rai_client.connect_host("10.0.0.44", 3000);
   rai_client.topic_loader(topics, actions);
 }
 

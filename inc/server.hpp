@@ -2,13 +2,13 @@
 #define REMOTE_AI_SERVER_HPP
 
 #include <map>
+#include <list>
 #include <string>
 #include <mutex>
 #include <thread>
 
 #include "tcp_server.hpp"
 #include "topic.hpp"
-#include "found_object.hpp"
 #include "client.hpp"
 
 
@@ -25,22 +25,18 @@ private:
     static void threaded_notifier(RemoteAIServer *a_server);
     static void threaded_run_server(RemoteAIServer *a_server);
     static void wait_untill_available(RemoteAIServer *a_server);
-    bool is_subscribe(std::string const &a_msg);
-    bool is_publish(std::string const &a_msg);
-    Topic get_topic(std::string const &a_msg);
-    void set_topic_object(std::string const &a_msg, Topic &a_topic);
-    void set_topic_object(std::string const &a_msg, Topic &a_topic, size_t a_length);
+    bool handle_subscription(RemoteAIServer &a_server, Client &a_client, char *a_msg, int a_length);
+    bool is_publish(char *a_msg, int a_length);
     bool is_topic_listened(Topic &a_topic);
-    void notify_all_subscribers(Topic const &a_topic);
-    void notify_all_subscribers(Topic const &a_topic, std::string const &a_msg);
+    void notify_all_subscribers(Topic &a_topic);
     void remove_subscriber(int a_client_socket);
     void send_immediate_message(std::string const &a_message);
+    void subscribe_topic(RemoteAIServer &a_server, Client &a_client, Topic a_topic);
 
 private:
     ServerTCP<RemoteAIServer> m_server;
-    std::map<Topic, FoundObject> m_objects;
-    std::map<Topic, std::vector<Client>> m_subscribers;
-    std::mutex m_mutex;
+    std::list<Topic> m_objects;
+    std::map<Topic, std::list<Client>> m_subscribers;
     std::thread m_main_thread;
     std::thread m_publisher;
 };

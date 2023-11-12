@@ -186,7 +186,7 @@ void RemoteAIClient::reconnect_host()
     m_client.close();
     while(!m_client.connected()){
         delay(10);
-        connect_host({10,0,0,38}, m_port);   
+        connect_host(m_host, m_port);   
         yield();
     }
 }
