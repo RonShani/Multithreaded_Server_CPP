@@ -98,6 +98,7 @@ void RemoteAIServer::subscribe_topic(RemoteAIServer &a_server, Client &a_client,
     if(a_topic.name()=="robot_view"){
         a_server.send_immediate_message("PUB/askstream/pub");
     }
+    a_server.m_subscribers[a_topic].unique();
 }
 
 bool RemoteAIServer::handle_subscription(RemoteAIServer &a_server, Client &a_client, char *a_msg, int a_length)

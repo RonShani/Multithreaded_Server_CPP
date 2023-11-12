@@ -13,6 +13,7 @@ typedef struct sockaddr_in SocketData;
 class Client{
 public:
 	Client(int _socket, struct sockaddr_in _sin);
+    bool operator==(Client const& a_other) const;
     struct sockaddr_in &addr();
     int &socket();
     bool is_closed();

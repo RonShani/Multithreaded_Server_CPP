@@ -9,6 +9,11 @@ Client::Client(int _socket, sockaddr_in _sin)
 {
 }
 
+bool Client::operator==(Client const &a_other) const
+{
+    return m_socket == a_other.m_socket;
+}
+
 sockaddr_in &Client::addr()
 {
     return m_sin;

@@ -1,4 +1,4 @@
-from hand_gestures import *
+#from hand_gestures import *
 from data_worker import *
 from PIL import Image
 from io import BytesIO
