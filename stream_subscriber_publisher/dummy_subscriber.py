@@ -9,13 +9,16 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     s.settimeout(1)
     s.connect((HOST, PORT))
     img = bytes()
+    publisher_topic(s, "askstream", "")
+    try_recieve(s, 500)
     send_msg(s,"SUB/robot_view/sub")
     while True:
-        try:
-            data = s.recv(10000)
-        except:
-            continue
-        try:
-            parse_to_img(data[15:])
-        except:
-            print(data[15:])
+        data = try_recieve(s, 10000)
+        if data is not None:
+            try_parse_jpg(data)
+        """
+            try:
+                parse_to_img(data[15:])
+            except:
+                print(data[15:])
+        """

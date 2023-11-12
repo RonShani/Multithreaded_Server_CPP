@@ -4,6 +4,29 @@ import numpy
 import numpy as np
 import io
 from PIL import Image
+
+def subscribe_topic(s, topic):
+    sub_str = "SUB/" + topic + "/sub"
+    send_msg(s, sub_str)
+
+def publisher_topic(s, topic, data):
+    str_msg = "PUB/" + topic + "<|||>" + data + "/pub"
+    send_msg(s, str_msg)
+
+def try_recieve(s, buffer_size):
+    try:
+        data = s.recv(buffer_size)
+        return data
+    except:
+        return None
+
+def try_parse_jpg(img_data):
+    pos = img_data.find(b'\xff\xd8\xff\xe0\x00\x10JFIF')
+    try:
+        parse_to_img(img_data[pos:])
+    except:
+        print("failed", pos)
+        #print(data[15:])
 def zeroes_pre(num, digits):
     string_num = str(num+4+digits)
     needed = digits-len(string_num)
@@ -66,3 +89,23 @@ def parse_to_img(img_data):
     except Exception as error:
         print(error)
         return None
+
+def open_video_device(devID):
+    cap = cv2.VideoCapture(devID)
+    if not cap.isOpened():
+        print("Cannot open camera")
+        return None
+    return cap
+
+def get_image(video_device, is_jpeg = True, dsize = (320, 240), quality = 60):
+    ret, frame = video_device.read()
+    if not ret:
+        return None
+    frame = cv2.resize(frame, dsize)
+    if is_jpeg:
+        encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
+        img_jpg = cv2.imencode(".jpg", frame, encode_param)
+        frame = np.frombuffer(img_jpg[1], dtype=np.uint8, count=-1)
+        if frame.size == 0:
+            return None
+    return frame

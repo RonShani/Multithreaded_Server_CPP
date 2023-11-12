@@ -11,8 +11,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     time.sleep(1)
     for t in topics:
         print("subscribing", t)
-        sub_str = "SUB/"+t+"/sub\n"
-        send_msg(s,sub_str)
+        subscribe_topic(s, t)
         data = s.recv(1000)
         time.sleep(1)
     while True:
