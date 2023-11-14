@@ -1,5 +1,11 @@
+#define DEBUG_MODE
 #include "remote_ai_client.hpp"
 #include "functionality.hpp"
+
+//static const char *pub_pre = "PUB/";
+static const char *sub_pre = "SUB/";
+static const char *sub_post = "/sub";
+static const int p_size = 4;
 
 RemoteAIClient::RemoteAIClient(const char *a_ssid, const char *a_pass, ok_func a_signal_ok)
 : m_wifimulti{}, m_client{}, m_topics{}, m_host{}, m_port{0}, m_signal_ok(a_signal_ok), m_topics_context{(void*)this}
@@ -10,9 +16,10 @@ RemoteAIClient::RemoteAIClient(const char *a_ssid, const char *a_pass, ok_func a
 
 void RemoteAIClient::connect_host(const char *host, const uint16_t port)
 {
+#ifdef DEBUG_MODE
     Serial.printf("connecting %s on port %d\n", host, port);
+#endif
     m_client.connect(host, port);
-    Serial.printf("Connected %d\n", m_client.state());
     m_client.setNoDelay(true);
     if(port != m_port){
         m_host.fromString(host);
@@ -39,8 +46,9 @@ void RemoteAIClient::add_topic(String const &a_topic, Functionality *a_func, boo
 {
     for(auto &topic : m_topics_context.topics()){
         do{
-            publish("/sub/"+topic.first);
-            delay(250);
+            publish(sub_pre+topic.first+sub_post);
+            delay(150);
+            yield();
         }while(!m_topics_context.validate_subject(topic.first));
     }
     if (a_is_first_time){
@@ -65,7 +73,7 @@ void RemoteAIClient::resubscribe_topics()
         add_topic(topic.first, nullptr, false);
     }
 }
-
+/*
 void RemoteAIClient::topic_loader(std::vector<String> &a_topics, std::vector<Functionality> &a_func_vector)
 {
     m_topics_context.clear_validations();
@@ -73,11 +81,26 @@ void RemoteAIClient::topic_loader(std::vector<String> &a_topics, std::vector<Fun
     for(size_t i = 0; i < a_topics.size(); ++i){
         m_topics_context.add_subject(a_topics[i]);
         add_topic(a_topics[i], &a_func_vector[i]);
+        delay(500);
+        yield();
         m_signal_ok(a_topics[i]);
     }
     m_topics_context.validation() = false;
 }
-
+*/
+void RemoteAIClient::topic_loader(std::vector<String> &a_topics, std::vector<Functionality> &a_func_vector)
+{
+    m_topics_context.clear_validations();
+    m_topics_context.validation() = true;
+    for(size_t i = 0; i < a_topics.size(); ++i){
+        m_topics_context.add_subject(a_topics[i]);
+        add_topic(a_topics[i], &a_func_vector[i]);
+        delay(500);
+        yield();
+        m_signal_ok(a_topics[i]);
+    }
+    m_topics_context.validation() = false;
+}
 void RemoteAIClient::addAP(const char *a_ssid, const char *a_pass)
 {
     m_wifimulti.addAP(a_ssid, a_pass);
@@ -110,8 +133,10 @@ void RemoteAIClient::act_upon_topic(String const &a_line)
 
 void RemoteAIClient::subscribed_ok(String const &a_msg)
 {
-  Serial.print("subscribed ");
-  Serial.println(a_msg);
+#ifdef DEBUG_MODE
+    Serial.print("subscribed ");
+    Serial.println(a_msg);
+#endif
 }
 
 void RemoteAIClient::publish(const char *buf, size_t size)
@@ -133,6 +158,14 @@ void RemoteAIClient::publish_two(const char *a_msg, size_t a_len, const char *b_
     m_client.write(b_msg, b_len);
 }
 
+void RemoteAIClient::publish_three(const char *a_msg, size_t a_len, const char *b_msg, size_t b_len, const char *c_msg, size_t c_len)
+{
+    write_pre_msg(a_len+b_len+c_len);
+    m_client.write(a_msg, a_len);
+    m_client.write(b_msg, b_len);
+    m_client.write(c_msg, c_len);
+}
+
 size_t RemoteAIClient::pre_msg(unsigned long a_len, char * pre)
 {
     a_len+=10;
@@ -148,10 +181,15 @@ void RemoteAIClient::data_handler(void *a_context, AsyncClient *a_client, void *
         ctx->validate_subject((char*)a_data, len);
     } else {
         String line = ctx->to_string((char*)a_data, len);
-        if(line[0] == '@'){
-            //Serial.printf("topic is: %s\n", line.substring(1, line.length()-1));
-            ((RemoteAIClient*)ctx->client())->act_upon_topic(line.substring(1, line.length()-1));
+        int pos = line.indexOf("<|||>");
+        if(pos != -1){
+            ((RemoteAIClient*)ctx->client())->act_upon_topic(line.substring(0,pos));//p_size, line.length() - 4));
         }
+#ifdef DEBUG_MODE
+        else {
+            Serial.println(line);
+        }
+#endif
     }
 }
 
@@ -163,7 +201,9 @@ void RemoteAIClient::error_handler(void *a_context, AsyncClient *a_client, int8_
 void RemoteAIClient::connect_handler(void *a_context, AsyncClient *a_client)
 {
     DataContext *ctx = (DataContext*)a_context;
+#ifdef DEBUG_MODE
     Serial.printf("disconnected! trying to reconnect...\n");
+#endif
     ((RemoteAIClient*)ctx->client())->reconnect_host();
 }
 

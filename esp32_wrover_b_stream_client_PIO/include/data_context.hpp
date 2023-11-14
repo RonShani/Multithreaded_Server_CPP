@@ -27,7 +27,7 @@ private:
     std::map<String, bool> m_sub_topics;
     bool m_is_validation;
     void *m_remote_ai;
-    const char *m_rv = "@robot_view|";
+    const char *m_rv = "PUB/robot_view<|||>";
 };
 
 #endif // DATA_CONTEXT_HPP

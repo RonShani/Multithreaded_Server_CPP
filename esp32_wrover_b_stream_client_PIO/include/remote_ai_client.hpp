@@ -36,6 +36,7 @@ public:
     void publish(const char *buf, size_t size);
     void publish(String const &a_stream);
     void publish_two(const char *a_msg, size_t a_len, const char *b_msg, size_t b_len);
+    void publish_three(const char *a_msg, size_t a_len, const char *b_msg, size_t b_len, const char *c_msg, size_t c_len);
     void send_as_is(unsigned char *a_msg, unsigned long a_len);
 
     static void subscribed_ok(String const &a_msg);

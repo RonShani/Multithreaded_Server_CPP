@@ -20,12 +20,17 @@ def try_recieve(s, buffer_size):
     except:
         return None
 
-def try_parse_jpg(img_data):
+
+def try_parse_jpg(img_data, is_need_rotate = False, rotate_code = cv2.ROTATE_90_CLOCKWISE):
     pos = img_data.find(b'\xff\xd8\xff\xe0\x00\x10JFIF')
     try:
-        parse_to_img(img_data[pos:])
+        if is_need_rotate:
+            return parse_to_img(img_data[pos:], True, rotation=rotate_code)
+        else:
+            return parse_to_img(img_data[pos:])
     except:
         print("failed", pos)
+        return None
         #print(data[15:])
 def zeroes_pre(num, digits):
     string_num = str(num+4+digits)
@@ -77,12 +82,16 @@ def parse_to_img_raw_rgb565(img_data):
     except Exception as error:
         print(error)
         return False
-def parse_to_img(img_data):
+
+
+def parse_to_img(img_data, is_rotate = False, rotation = cv2.ROTATE_90_CLOCKWISE):
     print(len(img_data))
     try:
         image = Image.open(io.BytesIO(img_data))
         open_cv_image = np.array(image)
         open_cv_image = cv2.cvtColor(open_cv_image, cv2.COLOR_BGR2RGB)
+        if is_rotate:
+            open_cv_image = cv2.rotate(open_cv_image,rotation)
         cv2.imshow("t", open_cv_image)
         cv2.waitKey(50)
         return open_cv_image

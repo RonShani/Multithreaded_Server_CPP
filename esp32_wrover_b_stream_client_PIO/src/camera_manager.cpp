@@ -3,6 +3,7 @@
 #include "esp_camera.h"
 #include "img_converters.h"
 #include "Arduino.h"
+#define DEBUG_MODE
 
 bool CameraManager::m_is_stream = false;
 
@@ -33,30 +34,25 @@ void CameraManager::begin()
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-   
-  if(psramFound()){
-    config.frame_size = FRAMESIZE_QQVGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
-    config.jpeg_quality = 20;
-    config.fb_count = 2;
-  } else {
-    config.frame_size = FRAMESIZE_QQVGA;
-    config.jpeg_quality = 30;
-    config.fb_count = 1;
-  }
-
+  config.frame_size = FRAMESIZE_QVGA; // FRAMESIZE_ + QVGA|CIF|VGA|SVGA|XGA|SXGA|UXGA
+  config.jpeg_quality = 40;
+  config.fb_count = 2;
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
+#ifdef DEBUG_MODE
     Serial.printf("Camera init failed with error 0x%x", err);
+#endif
     return;
   }
-
   sensor_t * s = esp_camera_sensor_get();
-  s->set_framesize(s, FRAMESIZE_QQVGA);
+  s->set_framesize(s, FRAMESIZE_QVGA);
 }
 
 void CameraManager::ask_stream()
 {
+#ifdef DEBUG_MODE
   Serial.println("ask_stream started");
+#endif
   m_is_stream = true;
 }
 
@@ -72,12 +68,14 @@ void CameraManager::capture_image(local_action a_action)
   }
   camera_fb_t * fb = NULL;
   fb = esp_camera_fb_get();
-  //delay(15);
+#ifdef DEBUG_MODE
+  delay(15);
   if (!fb) {
     Serial.println("failed to get camera");
     return;
   }
-  //delay(15);
+  delay(15);
+#endif
   a_action((char*)fb->buf, fb->len);
   esp_camera_fb_return(fb);
 }

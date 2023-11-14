@@ -26,7 +26,7 @@ void RemoteAIServer::read_income(Client &a_client, int _id, char *_msg, int _len
        return;
     } 
     else if(a_server.is_publish(_msg, _length)){
-        a_server.m_server.send_message(m_ok, _id);
+        //a_server.m_server.send_message(m_ok, _id);
     } else {
         a_server.m_server.send_message("no action", _id);
     }
@@ -99,6 +99,7 @@ void RemoteAIServer::subscribe_topic(RemoteAIServer &a_server, Client &a_client,
         a_server.send_immediate_message("PUB/askstream/pub");
     }
     a_server.m_subscribers[a_topic].unique();
+    std::cout<<"Subscribed to "<<a_topic.name()<<std::endl;
 }
 
 bool RemoteAIServer::handle_subscription(RemoteAIServer &a_server, Client &a_client, char *a_msg, int a_length)

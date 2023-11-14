@@ -10,10 +10,10 @@ class HandGesturesController:
         self.mpHands = mp.solutions.hands
         self.hands = self.mpHands.Hands(max_num_hands=1, min_detection_confidence=0.7)
         self.mpDraw = mp.solutions.drawing_utils
-        os.path.join("./../HandGestures")
+        os.path.join("/home/ronshani/PycharmProjects/HandGestures")
         # Load the gesture recognizer model
-        self.model = load_model('./../HandGestures/mp_hand_gesture')
-        f = open('./../HandGestures/gesture.names', 'r')
+        self.model = load_model('/home/ronshani/PycharmProjects/HandGestures/mp_hand_gesture')
+        f = open('/home/ronshani/PycharmProjects/HandGestures/gesture.names', 'r')
         self.classNames = f.read().split('\n')
         f.close()
         print(self.classNames)

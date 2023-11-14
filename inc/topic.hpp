@@ -19,6 +19,11 @@ public:
     std::string &data();
 
 private:
+    bool is_ends_with(std::string const &a_ends) const;
+    bool find_ends_with(std::string const &a_ends);
+    void clear_pres(std::string const &a_pre);
+
+private:
     std::string m_raw;
     bool m_is_published;
     size_t m_name_pos;
